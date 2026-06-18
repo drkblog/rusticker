@@ -16,6 +16,10 @@ struct Cli {
     #[arg(long, global = true, default_value_t = 300)]
     dpi: u32,
 
+    /// Force overwrite of the output file if it already exists
+    #[arg(long, global = true)]
+    force: bool,
+
     /// Print version information
     #[arg(short = 'V', long = "version", action = clap::ArgAction::Version)]
     version: Option<bool>,
@@ -40,6 +44,10 @@ enum Commands {
         #[arg(long, default_value_t = 2.0)]
         min_space: f64,
 
+        /// Stroke thickness of the figure outline in millimeters
+        #[arg(long, default_value_t = 1.0)]
+        stroke_thickness: f64,
+
         /// Output file path for the PDF
         #[arg(short, long, default_value = "baked.pdf")]
         output: PathBuf,
@@ -62,6 +70,10 @@ enum Commands {
         #[arg(long, default_value_t = 2.0)]
         min_space: f64,
 
+        /// Stroke thickness of the figure outline in millimeters
+        #[arg(long, default_value_t = 1.0)]
+        stroke_thickness: f64,
+
         /// Output file path for the PDF
         #[arg(short, long, default_value = "composed.pdf")]
         output: PathBuf,
@@ -71,6 +83,7 @@ enum Commands {
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
     let dpi = cli.dpi;
+    let force = cli.force;
 
     // Validate DPI values
     if dpi != 100 && dpi != 200 && dpi != 300 && dpi != 600 {
@@ -82,18 +95,34 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             figure,
             size,
             min_space,
+            stroke_thickness,
             output,
         } => {
-            bake_grid(figure, size, dpi, min_space, output)?;
+            if output.exists() && !force {
+                return Err(format!(
+                    "Output file '{}' already exists. Use --force to overwrite.",
+                    output.display()
+                )
+                .into());
+            }
+            bake_grid(figure, size, dpi, min_space, stroke_thickness, output)?;
         }
         Commands::Compose {
             figure,
             input,
             size,
             min_space,
+            stroke_thickness,
             output,
         } => {
-            compose_grid(figure, input, size, dpi, min_space, output)?;
+            if output.exists() && !force {
+                return Err(format!(
+                    "Output file '{}' already exists. Use --force to overwrite.",
+                    output.display()
+                )
+                .into());
+            }
+            compose_grid(figure, input, size, dpi, min_space, stroke_thickness, output)?;
         }
     }
 

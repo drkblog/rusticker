@@ -14,6 +14,7 @@ pub fn bake_grid(
     size_px: u32,
     dpi: u32,
     min_space_mm: f64,
+    stroke_thickness_mm: f64,
     output_path: PathBuf,
 ) -> Result<(), Box<dyn std::error::Error>> {
     // A4 dimensions: 210mm x 297mm
@@ -85,7 +86,7 @@ pub fn bake_grid(
         layer_id: graphics_layer_id,
     });
 
-    // Set outline/stroke style: black color, 1.0pt thickness
+    // Set outline/stroke style: black color, custom thickness
     ops.push(Op::SetOutlineColor {
         col: Color::Rgb(Rgb {
             r: 0.0,
@@ -94,7 +95,8 @@ pub fn bake_grid(
             icc_profile: None,
         }),
     });
-    ops.push(Op::SetOutlineThickness { pt: Pt(1.0) });
+    let stroke_thickness_pt = stroke_thickness_mm / 25.4 * 72.0;
+    ops.push(Op::SetOutlineThickness { pt: Pt(stroke_thickness_pt as f32) });
 
     for r in 0..rows {
         for c in 0..cols {
@@ -278,6 +280,7 @@ pub fn compose_grid(
     size_px: u32,
     dpi: u32,
     min_space_mm: f64,
+    stroke_thickness_mm: f64,
     output_path: PathBuf,
 ) -> Result<(), Box<dyn std::error::Error>> {
     // 1. Open the image
@@ -390,7 +393,7 @@ pub fn compose_grid(
         layer_id: graphics_layer_id,
     });
 
-    // Set outline/stroke style: black color, 1.0pt thickness
+    // Set outline/stroke style: black color, custom thickness
     ops.push(Op::SetOutlineColor {
         col: Color::Rgb(Rgb {
             r: 0.0,
@@ -399,7 +402,8 @@ pub fn compose_grid(
             icc_profile: None,
         }),
     });
-    ops.push(Op::SetOutlineThickness { pt: Pt(1.0) });
+    let stroke_thickness_pt = stroke_thickness_mm / 25.4 * 72.0;
+    ops.push(Op::SetOutlineThickness { pt: Pt(stroke_thickness_pt as f32) });
 
     for r in 0..rows {
         for c in 0..cols {
