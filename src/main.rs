@@ -36,6 +36,10 @@ enum Commands {
         #[arg(long)]
         size: u32,
 
+        /// Minimum space in millimeters between a figure and the others surrounding it
+        #[arg(long, default_value_t = 2.0)]
+        min_space: f64,
+
         /// Output file path for the PDF
         #[arg(short, long, default_value = "baked.pdf")]
         output: PathBuf,
@@ -61,9 +65,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::Bake {
             figure,
             size,
+            min_space,
             output,
         } => {
-            bake_grid(figure, size, dpi, output)?;
+            bake_grid(figure, size, dpi, min_space, output)?;
         }
     }
 
@@ -74,6 +79,7 @@ fn bake_grid(
     figure: FigureType,
     size_px: u32,
     dpi: u32,
+    min_space_mm: f64,
     output_path: PathBuf,
 ) -> Result<(), Box<dyn std::error::Error>> {
     // A4 dimensions: 210mm x 297mm
@@ -87,9 +93,9 @@ fn bake_grid(
     // Convert figure size from pixels to PDF points
     let size_pt = (size_px as f64) / (dpi as f64) * 72.0;
 
-    // Set layout parameters: 10mm margins, 2mm gap between figures
+    // Set layout parameters: 10mm margins, min_space_mm gap between figures
     let margin_mm = 10.0f64;
-    let gap_mm = 2.0f64;
+    let gap_mm = min_space_mm;
 
     let margin_pt = margin_mm / 25.4 * 72.0;
     let gap_pt = gap_mm / 25.4 * 72.0;
