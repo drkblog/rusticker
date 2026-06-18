@@ -5,7 +5,7 @@
 ## Features
 
 - **High-Precision Layouts**: Generates A4 PDF pages with customized grid alignments.
-- **Support for Shapes**: Supports drawing squares or circles as base figures.
+- **Support for Shapes**: Supports drawing squares or circles as base figures, or dynamically tracing a custom `mask` outline around the foreground.
 - **Image Composition**: Repeats and center-crops input images (PNG/JPEG) into shapes within the grid layout.
 - **Adjustable Parameters**:
   - Customize DPI resolution (100, 200, 300, 600).
@@ -45,7 +45,7 @@ Generates blank shapes (square or circle outlines) in an A4 grid.
 rusticker bake [OPTIONS] --figure <FIGURE> --size <SIZE>
 ```
 
-- `--figure <FIGURE>`: Type of figure to bake (`square` or `circle`).
+- `--figure <FIGURE>`: Type of figure to bake (`square` or `circle` - `mask` is not supported for baking).
 - `--size <SIZE>`: Size of the figure in pixels (side length for square, diameter for circle).
 - `--min-space <MIN_SPACE>`: Minimum spacing in millimeters between adjacent figures [default: `2.0`].
 - `--stroke-thickness <STROKE_THICKNESS>`: Stroke thickness of the figure outline in millimeters (e.g. `2.25`) [default: `1.0`].
@@ -59,7 +59,7 @@ Generates grid shapes populated with a center-cropped repeat of an input image.
 rusticker compose [OPTIONS] --figure <FIGURE> --input <INPUT> --size <SIZE>
 ```
 
-- `--figure <FIGURE>`: Type of figure (`square` or `circle`).
+- `--figure <FIGURE>`: Type of figure (`square`, `circle`, or `mask`). The `mask` option dynamically detects background pixels (matching the color at `(0, 0)`) and traces a custom outline around the foreground sticker.
 - `--input <INPUT>`: Path to the input image file (PNG or JPEG).
 - `--size <SIZE>`: Size of the figure in pixels.
 - `--min-space <MIN_SPACE>`: Minimum spacing in millimeters between adjacent figures [default: `2.0`].

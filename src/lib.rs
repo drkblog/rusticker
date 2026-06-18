@@ -7,6 +7,7 @@ use std::path::PathBuf;
 pub enum FigureType {
     Square,
     Circle,
+    Mask,
 }
 
 pub fn bake_grid(
@@ -17,6 +18,9 @@ pub fn bake_grid(
     stroke_thickness_mm: f64,
     output_path: PathBuf,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    if figure == FigureType::Mask {
+        return Err("The 'mask' figure type requires an input image and is not supported in the bake subcommand.".into());
+    }
     // A4 dimensions: 210mm x 297mm
     let page_width_mm = 210.0f32;
     let page_height_mm = 297.0f32;
@@ -247,6 +251,7 @@ pub fn bake_grid(
                     };
                     ops.push(Op::DrawLine { line });
                 }
+                FigureType::Mask => unreachable!(),
             }
         }
     }
@@ -302,6 +307,113 @@ pub fn compose_grid(
         let y = (height - size_px) / 2;
         img.crop_imm(x, y, size_px, size_px)
     };
+
+    let mut loops = Vec::new();
+    if figure == FigureType::Mask {
+        let bg_color = cropped.get_pixel(0, 0);
+        let mut visited = vec![vec![false; size_px as usize]; size_px as usize];
+        let mut q = std::collections::VecDeque::new();
+        if size_px > 0 {
+            q.push_back((0, 0));
+            visited[0][0] = true;
+        }
+        while let Some((cx, cy)) = q.pop_front() {
+            for &(nx, ny) in &[
+                (cx as i32 + 1, cy as i32),
+                (cx as i32 - 1, cy as i32),
+                (cx as i32, cy as i32 + 1),
+                (cx as i32, cy as i32 - 1),
+            ] {
+                if nx >= 0 && nx < size_px as i32 && ny >= 0 && ny < size_px as i32 {
+                    let ux = nx as usize;
+                    let uy = ny as usize;
+                    if !visited[uy][ux] && cropped.get_pixel(nx as u32, ny as u32) == bg_color {
+                        visited[uy][ux] = true;
+                        q.push_back((nx as u32, ny as u32));
+                    }
+                }
+            }
+        }
+
+        let grid_w = size_px as i32 + 2;
+        let grid_h = size_px as i32 + 2;
+        let mut is_bg = vec![vec![false; grid_w as usize]; grid_h as usize];
+        for sy in 0..grid_h {
+            for sx in 0..grid_w {
+                let x = sx - 1;
+                let y = sy - 1;
+                is_bg[sy as usize][sx as usize] = x < 0 || x >= size_px as i32 || y < 0 || y >= size_px as i32 || visited[y as usize][x as usize];
+            }
+        }
+
+        let mut segments = Vec::new();
+        let get_bg = |sx: i32, sy: i32| -> bool {
+            if sx < 0 || sx >= grid_w || sy < 0 || sy >= grid_h {
+                true
+            } else {
+                is_bg[sy as usize][sx as usize]
+            }
+        };
+
+        for sy in 0..grid_h {
+            for sx in 0..grid_w {
+                if get_bg(sx, sy) {
+                    if !get_bg(sx + 1, sy) {
+                        segments.push(((sx + 1, sy), (sx + 1, sy + 1)));
+                    }
+                    if !get_bg(sx - 1, sy) {
+                        segments.push(((sx, sy + 1), (sx, sy)));
+                    }
+                    if !get_bg(sx, sy + 1) {
+                        segments.push(((sx + 1, sy + 1), (sx, sy + 1)));
+                    }
+                    if !get_bg(sx, sy - 1) {
+                        segments.push(((sx, sy), (sx + 1, sy)));
+                    }
+                }
+            }
+        }
+
+        use std::collections::HashMap;
+        let mut adj: HashMap<(i32, i32), Vec<(i32, i32)>> = HashMap::new();
+        for &(start, end) in &segments {
+            adj.entry(start).or_default().push(end);
+        }
+
+        while !adj.is_empty() {
+            let &start_pt = adj.keys().next().unwrap();
+            if adj.get(&start_pt).map_or(true, |v| v.is_empty()) {
+                adj.remove(&start_pt);
+                continue;
+            }
+            
+            let mut curr = start_pt;
+            let mut path = vec![curr];
+            let mut success = false;
+            
+            while let Some(options) = adj.get_mut(&curr) {
+                if options.is_empty() {
+                    break;
+                }
+                let next_pt = options.pop().unwrap();
+                if options.is_empty() {
+                    adj.remove(&curr);
+                }
+                curr = next_pt;
+                path.push(curr);
+                if curr == start_pt {
+                    success = true;
+                    break;
+                }
+            }
+            
+            if success && path.len() > 1 {
+                loops.push(path);
+            } else {
+                adj.remove(&start_pt);
+            }
+        }
+    }
 
     // 4. Encode cropped image to PNG bytes in-memory
     let mut png_bytes: Vec<u8> = Vec::new();
@@ -553,6 +665,28 @@ pub fn compose_grid(
                         is_closed: true,
                     };
                     ops.push(Op::DrawLine { line });
+                }
+                FigureType::Mask => {
+                    let scale = size_pt / size_px as f64;
+                    for lp in &loops {
+                        let mut points = Vec::new();
+                        for &(cx, cy) in lp {
+                            let lx = x + (cx - 1) as f64 * scale;
+                            let ly = y + (size_px as f64 - (cy - 1) as f64) * scale;
+                            points.push(LinePoint {
+                                p: Point {
+                                    x: Pt(lx as f32),
+                                    y: Pt(ly as f32),
+                                },
+                                bezier: false,
+                            });
+                        }
+                        let line = Line {
+                            points,
+                            is_closed: true,
+                        };
+                        ops.push(Op::DrawLine { line });
+                    }
                 }
             }
         }
