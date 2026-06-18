@@ -291,6 +291,13 @@ fn bake_grid(
                             },
                             bezier: true,
                         },
+                        LinePoint {
+                            p: Point {
+                                x: Pt((cx + radius) as f32),
+                                y: Pt(cy as f32),
+                            },
+                            bezier: false,
+                        },
                     ];
                     let line = Line {
                         points,
