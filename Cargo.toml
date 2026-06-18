@@ -5,4 +5,5 @@ edition = "2024"
 
 [dependencies]
 clap = { version = "4.6.1", features = ["derive"] }
-printpdf = "0.9.1"
+printpdf = { version = "0.9.1", features = ["images", "png", "jpeg"] }
+image = { version = "0.25.0", features = ["png", "jpeg"] }

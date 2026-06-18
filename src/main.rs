@@ -1,5 +1,5 @@
 use clap::{Parser, Subcommand};
-use rusticker::{bake_grid, FigureType};
+use rusticker::{bake_grid, compose_grid, FigureType};
 use std::path::PathBuf;
 
 /// Rusticker CLI application
@@ -44,6 +44,28 @@ enum Commands {
         #[arg(short, long, default_value = "baked.pdf")]
         output: PathBuf,
     },
+    /// Compose figures and repeat an input image into a PDF grid on an A4 page
+    Compose {
+        /// Type of figure to bake (square or circle)
+        #[arg(long, value_enum)]
+        figure: FigureType,
+
+        /// Path to the input image file (PNG or JPEG)
+        #[arg(long)]
+        input: PathBuf,
+
+        /// Size of the figure in pixels (side for square, diameter for circle)
+        #[arg(long)]
+        size: u32,
+
+        /// Minimum space in millimeters between a figure and the others surrounding it
+        #[arg(long, default_value_t = 2.0)]
+        min_space: f64,
+
+        /// Output file path for the PDF
+        #[arg(short, long, default_value = "composed.pdf")]
+        output: PathBuf,
+    },
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -63,6 +85,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             output,
         } => {
             bake_grid(figure, size, dpi, min_space, output)?;
+        }
+        Commands::Compose {
+            figure,
+            input,
+            size,
+            min_space,
+            output,
+        } => {
+            compose_grid(figure, input, size, dpi, min_space, output)?;
         }
     }
 
