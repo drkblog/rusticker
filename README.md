@@ -1,6 +1,6 @@
 # Rusticker
 
-`rusticker` is a command-line tool written in Rust for generating A4 grid layouts of stickers/shapes as vector outlines or composed with images in a PDF format. It enables precise control over grid dimensions, DPI resolutions, and spacing.
+`rusticker` is a command-line tool written in Rust for generating A4 grid layouts of stickers in PDF format, offering precise control over grid dimensions, DPI, and spacing. It allows you to create PDF documents with two layers: a raster layer with the image to be printed, and a vector layer with the outline for die-cutting.
 
 ## Features
 
