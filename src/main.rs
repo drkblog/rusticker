@@ -64,7 +64,7 @@ enum Commands {
 
         /// Size of the figure in pixels (side for square, diameter for circle)
         #[arg(long)]
-        size: u32,
+        size: Option<u32>,
 
         /// Minimum space in millimeters between a figure and the others surrounding it
         #[arg(long, default_value_t = 2.0)]

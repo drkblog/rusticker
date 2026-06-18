@@ -56,12 +56,12 @@ rusticker bake [OPTIONS] --figure <FIGURE> --size <SIZE>
 Generates grid shapes populated with a center-cropped repeat of an input image.
 
 ```bash
-rusticker compose [OPTIONS] --figure <FIGURE> --input <INPUT> --size <SIZE>
+rusticker compose [OPTIONS] --figure <FIGURE> --input <INPUT>
 ```
 
 - `--figure <FIGURE>`: Type of figure (`square`, `circle`, or `mask`). The `mask` option dynamically detects background pixels (matching the color at `(0, 0)`) and traces a custom outline around the foreground sticker.
 - `--input <INPUT>`: Path to the input image file (PNG or JPEG).
-- `--size <SIZE>`: Size of the figure in pixels.
+- `--size <SIZE>`: (Optional) Size of the figure in pixels. If not provided, no cropping is performed and the largest dimension of the input image is used as the base size.
 - `--min-space <MIN_SPACE>`: Minimum spacing in millimeters between adjacent figures [default: `2.0`].
 - `--stroke-thickness <STROKE_THICKNESS>`: Stroke thickness of the outline in millimeters [default: `1.0`].
 - `-o, --output <OUTPUT>`: Output PDF file path [default: `composed.pdf`].

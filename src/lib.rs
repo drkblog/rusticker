@@ -282,7 +282,7 @@ pub fn bake_grid(
 pub fn compose_grid(
     figure: FigureType,
     input_path: PathBuf,
-    size_px: u32,
+    size_px: Option<u32>,
     dpi: u32,
     min_space_mm: f64,
     stroke_thickness_mm: f64,
@@ -293,27 +293,32 @@ pub fn compose_grid(
         .with_guessed_format()?
         .decode()?;
     
-    // 2. Validate dimensions
+    // 2. Determine target size and crop if needed
     let (width, height) = img.dimensions();
-    if width < size_px || height < size_px {
-        return Err("Input image is smaller than the specified size".into());
-    }
-
-    // 3. Center crop the image to size_px x size_px
-    let cropped = if width == size_px && height == size_px {
-        img
+    let (cropped, actual_size_px) = if let Some(s) = size_px {
+        if width < s || height < s {
+            return Err("Input image is smaller than the specified size".into());
+        }
+        let cropped_img = if width == s && height == s {
+            img
+        } else {
+            let x = (width - s) / 2;
+            let y = (height - s) / 2;
+            img.crop_imm(x, y, s, s)
+        };
+        (cropped_img, s)
     } else {
-        let x = (width - size_px) / 2;
-        let y = (height - size_px) / 2;
-        img.crop_imm(x, y, size_px, size_px)
+        (img, std::cmp::max(width, height))
     };
+
+    let (cropped_width, cropped_height) = cropped.dimensions();
 
     let mut loops = Vec::new();
     if figure == FigureType::Mask {
         let bg_color = cropped.get_pixel(0, 0);
-        let mut visited = vec![vec![false; size_px as usize]; size_px as usize];
+        let mut visited = vec![vec![false; cropped_width as usize]; cropped_height as usize];
         let mut q = std::collections::VecDeque::new();
-        if size_px > 0 {
+        if cropped_width > 0 && cropped_height > 0 {
             q.push_back((0, 0));
             visited[0][0] = true;
         }
@@ -324,7 +329,7 @@ pub fn compose_grid(
                 (cx as i32, cy as i32 + 1),
                 (cx as i32, cy as i32 - 1),
             ] {
-                if nx >= 0 && nx < size_px as i32 && ny >= 0 && ny < size_px as i32 {
+                if nx >= 0 && nx < cropped_width as i32 && ny >= 0 && ny < cropped_height as i32 {
                     let ux = nx as usize;
                     let uy = ny as usize;
                     if !visited[uy][ux] && cropped.get_pixel(nx as u32, ny as u32) == bg_color {
@@ -335,14 +340,14 @@ pub fn compose_grid(
             }
         }
 
-        let grid_w = size_px as i32 + 2;
-        let grid_h = size_px as i32 + 2;
+        let grid_w = cropped_width as i32 + 2;
+        let grid_h = cropped_height as i32 + 2;
         let mut is_bg = vec![vec![false; grid_w as usize]; grid_h as usize];
         for sy in 0..grid_h {
             for sx in 0..grid_w {
                 let x = sx - 1;
                 let y = sy - 1;
-                is_bg[sy as usize][sx as usize] = x < 0 || x >= size_px as i32 || y < 0 || y >= size_px as i32 || visited[y as usize][x as usize];
+                is_bg[sy as usize][sx as usize] = x < 0 || x >= cropped_width as i32 || y < 0 || y >= cropped_height as i32 || visited[y as usize][x as usize];
             }
         }
 
@@ -433,7 +438,7 @@ pub fn compose_grid(
     let page_height_pt = (page_height_mm as f64) / 25.4 * 72.0;
 
     // Convert figure size from pixels to PDF points
-    let size_pt = (size_px as f64) / (dpi as f64) * 72.0;
+    let size_pt = (actual_size_px as f64) / (dpi as f64) * 72.0;
 
     // Set layout parameters: 10mm margins, min_space_mm gap between figures
     let margin_mm = 10.0f64;
@@ -448,7 +453,7 @@ pub fn compose_grid(
     if size_pt > available_width || size_pt > available_height {
         eprintln!(
             "Error: Figure size of {} pixels ({:.2} pt) at {} DPI is larger than available page area (width: {:.2} pt, height: {:.2} pt).",
-            size_px, size_pt, dpi, available_width, available_height
+            actual_size_px, size_pt, dpi, available_width, available_height
         );
         return Err("Figure size exceeds available page space.".into());
     }
@@ -468,7 +473,7 @@ pub fn compose_grid(
         cols,
         rows,
         cols * rows,
-        size_px,
+        actual_size_px,
         size_pt,
         dpi,
         output_path
@@ -667,12 +672,12 @@ pub fn compose_grid(
                     ops.push(Op::DrawLine { line });
                 }
                 FigureType::Mask => {
-                    let scale = size_pt / size_px as f64;
+                    let scale = size_pt / actual_size_px as f64;
                     for lp in &loops {
                         let mut points = Vec::new();
                         for &(cx, cy) in lp {
                             let lx = x + (cx - 1) as f64 * scale;
-                            let ly = y + (size_px as f64 - (cy - 1) as f64) * scale;
+                            let ly = y + (cropped_height as f64 - (cy - 1) as f64) * scale;
                             points.push(LinePoint {
                                 p: Point {
                                     x: Pt(lx as f32),
