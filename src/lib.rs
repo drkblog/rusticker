@@ -438,7 +438,15 @@ pub fn compose_grid(
     let page_height_pt = (page_height_mm as f64) / 25.4 * 72.0;
 
     // Convert figure size from pixels to PDF points
-    let size_pt = (actual_size_px as f64) / (dpi as f64) * 72.0;
+    let (width_pt, height_pt) = if figure == FigureType::Mask {
+        (
+            (cropped_width as f64) / (dpi as f64) * 72.0,
+            (cropped_height as f64) / (dpi as f64) * 72.0,
+        )
+    } else {
+        let size_pt = (actual_size_px as f64) / (dpi as f64) * 72.0;
+        (size_pt, size_pt)
+    };
 
     // Set layout parameters: 10mm margins, min_space_mm gap between figures
     let margin_mm = 10.0f64;
@@ -450,17 +458,17 @@ pub fn compose_grid(
     let available_width = page_width_pt - 2.0 * margin_pt;
     let available_height = page_height_pt - 2.0 * margin_pt;
 
-    if size_pt > available_width || size_pt > available_height {
+    if width_pt > available_width || height_pt > available_height {
         eprintln!(
-            "Error: Figure size of {} pixels ({:.2} pt) at {} DPI is larger than available page area (width: {:.2} pt, height: {:.2} pt).",
-            actual_size_px, size_pt, dpi, available_width, available_height
+            "Error: Figure size of {}x{} pixels ({:.2}x{:.2} pt) at {} DPI is larger than available page area (width: {:.2} pt, height: {:.2} pt).",
+            cropped_width, cropped_height, width_pt, height_pt, dpi, available_width, available_height
         );
         return Err("Figure size exceeds available page space.".into());
     }
 
     // Number of columns and rows
-    let cols = ((available_width + gap_pt) / (size_pt + gap_pt)).floor() as usize;
-    let rows = ((available_height + gap_pt) / (size_pt + gap_pt)).floor() as usize;
+    let cols = ((available_width + gap_pt) / (width_pt + gap_pt)).floor() as usize;
+    let rows = ((available_height + gap_pt) / (height_pt + gap_pt)).floor() as usize;
 
     if cols == 0 || rows == 0 {
         return Err(
@@ -468,16 +476,31 @@ pub fn compose_grid(
         );
     }
 
-    println!(
-        "Composing grid of {}x{} = {} figures (size: {} px / {:.2} pt, DPI: {}) to {:?}",
-        cols,
-        rows,
-        cols * rows,
-        actual_size_px,
-        size_pt,
-        dpi,
-        output_path
-    );
+    if figure == FigureType::Mask {
+        println!(
+            "Composing grid of {}x{} = {} figures (size: {}x{} px / {:.2}x{:.2} pt, DPI: {}) to {:?}",
+            cols,
+            rows,
+            cols * rows,
+            cropped_width,
+            cropped_height,
+            width_pt,
+            height_pt,
+            dpi,
+            output_path
+        );
+    } else {
+        println!(
+            "Composing grid of {}x{} = {} figures (size: {} px / {:.2} pt, DPI: {}) to {:?}",
+            cols,
+            rows,
+            cols * rows,
+            actual_size_px,
+            width_pt,
+            dpi,
+            output_path
+        );
+    }
 
     // Initialize the PDF Document
     let mut doc = PdfDocument::new("Composed Grid");
@@ -525,8 +548,8 @@ pub fn compose_grid(
     for r in 0..rows {
         for c in 0..cols {
             // Calculate coordinates for top-left aligned placement of bounding box
-            let x = margin_pt + (c as f64) * (size_pt + gap_pt);
-            let y = page_height_pt - margin_pt - size_pt - (r as f64) * (size_pt + gap_pt);
+            let x = margin_pt + (c as f64) * (width_pt + gap_pt);
+            let y = page_height_pt - margin_pt - height_pt - (r as f64) * (height_pt + gap_pt);
 
             match figure {
                 FigureType::Square => {
@@ -540,22 +563,22 @@ pub fn compose_grid(
                         },
                         LinePoint {
                             p: Point {
-                                x: Pt((x + size_pt) as f32),
+                                x: Pt((x + width_pt) as f32),
                                 y: Pt(y as f32),
                             },
                             bezier: false,
                         },
                         LinePoint {
                             p: Point {
-                                x: Pt((x + size_pt) as f32),
-                                y: Pt((y + size_pt) as f32),
+                                x: Pt((x + width_pt) as f32),
+                                y: Pt((y + height_pt) as f32),
                             },
                             bezier: false,
                         },
                         LinePoint {
                             p: Point {
                                 x: Pt(x as f32),
-                                y: Pt((y + size_pt) as f32),
+                                y: Pt((y + height_pt) as f32),
                             },
                             bezier: false,
                         },
@@ -567,9 +590,9 @@ pub fn compose_grid(
                     ops.push(Op::DrawLine { line });
                 }
                 FigureType::Circle => {
-                    let cx = x + size_pt / 2.0;
-                    let cy = y + size_pt / 2.0;
-                    let radius = size_pt / 2.0;
+                    let cx = x + width_pt / 2.0;
+                    let cy = y + height_pt / 2.0;
+                    let radius = width_pt / 2.0;
                     let k = 0.55228474983; // Cubic Bézier circle approximation constant
 
                     let points = vec![
@@ -672,7 +695,7 @@ pub fn compose_grid(
                     ops.push(Op::DrawLine { line });
                 }
                 FigureType::Mask => {
-                    let scale = size_pt / actual_size_px as f64;
+                    let scale = 72.0 / (dpi as f64);
                     for lp in &loops {
                         let mut points = Vec::new();
                         for &(cx, cy) in lp {
@@ -710,8 +733,8 @@ pub fn compose_grid(
     for r in 0..rows {
         for c in 0..cols {
             // Calculate coordinates for top-left aligned placement of image
-            let x = margin_pt + (c as f64) * (size_pt + gap_pt);
-            let y = page_height_pt - margin_pt - size_pt - (r as f64) * (size_pt + gap_pt);
+            let x = margin_pt + (c as f64) * (width_pt + gap_pt);
+            let y = page_height_pt - margin_pt - height_pt - (r as f64) * (height_pt + gap_pt);
 
             ops.push(Op::UseXobject {
                 id: image_xobject_id.clone(),
