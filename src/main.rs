@@ -20,6 +20,10 @@ struct Cli {
     #[arg(long, global = true)]
     force: bool,
 
+    /// Show verbose logs on stdout
+    #[arg(short = 'v', long = "verbose", global = true)]
+    verbose: bool,
+
     /// Print version information
     #[arg(short = 'V', long = "version", action = clap::ArgAction::Version)]
     version: Option<bool>,
@@ -84,6 +88,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
     let dpi = cli.dpi;
     let force = cli.force;
+    let verbose = cli.verbose;
 
     // Validate DPI values
     if dpi != 100 && dpi != 200 && dpi != 300 && dpi != 600 {
@@ -105,7 +110,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 )
                 .into());
             }
-            bake_grid(figure, size, dpi, min_space, stroke_thickness, output)?;
+            bake_grid(figure, size, dpi, min_space, stroke_thickness, output, verbose)?;
         }
         Commands::Compose {
             figure,
@@ -122,7 +127,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 )
                 .into());
             }
-            compose_grid(figure, input, size, dpi, min_space, stroke_thickness, output)?;
+            compose_grid(figure, input, size, dpi, min_space, stroke_thickness, output, verbose)?;
         }
     }
 

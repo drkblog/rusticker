@@ -17,9 +17,13 @@ pub fn bake_grid(
     min_space_mm: f64,
     stroke_thickness_mm: f64,
     output_path: PathBuf,
+    verbose: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     if figure == FigureType::Mask {
         return Err("The 'mask' figure type requires an input image and is not supported in the bake subcommand.".into());
+    }
+    if verbose {
+        println!("[VERBOSE] Step: Initializing layout and calculating grid cells...");
     }
     // A4 dimensions: 210mm x 297mm
     let page_width_mm = 210.0f32;
@@ -38,6 +42,11 @@ pub fn bake_grid(
 
     let margin_pt = margin_mm / 25.4 * 72.0;
     let gap_pt = gap_mm / 25.4 * 72.0;
+
+    if verbose {
+        println!("[VERBOSE] Grid details: Page size: {:.2}x{:.2} pt | Margins: {:.2} pt | Spacing (gap): {:.2} pt | Figure size: {:.2} pt",
+                 page_width_pt, page_height_pt, margin_pt, gap_pt, size_pt);
+    }
 
     let available_width = page_width_pt - 2.0 * margin_pt;
     let available_height = page_height_pt - 2.0 * margin_pt;
@@ -60,6 +69,10 @@ pub fn bake_grid(
         );
     }
 
+    if verbose {
+        println!("[VERBOSE] Calculated grid layout: {} columns, {} rows (Total: {} figures)", cols, rows, cols * rows);
+    }
+
     println!(
         "Baking grid of {}x{} = {} figures (size: {} px / {:.2} pt, DPI: {}) to {:?}",
         cols,
@@ -71,6 +84,9 @@ pub fn bake_grid(
         output_path
     );
 
+    if verbose {
+        println!("[VERBOSE] Step: Initializing PDF document...");
+    }
     // Initialize the PDF Document
     let mut doc = PdfDocument::new("Baked Grid");
 
@@ -101,6 +117,10 @@ pub fn bake_grid(
     });
     let stroke_thickness_pt = stroke_thickness_mm / 25.4 * 72.0;
     ops.push(Op::SetOutlineThickness { pt: Pt(stroke_thickness_pt as f32) });
+
+    if verbose {
+        println!("[VERBOSE] Step: Drawing vector outlines for figures...");
+    }
 
     for r in 0..rows {
         for c in 0..cols {
@@ -262,6 +282,9 @@ pub fn bake_grid(
     // Create the page with A4 dimensions (Portrait)
     let page = PdfPage::new(Mm(page_width_mm), Mm(page_height_mm), ops);
 
+    if verbose {
+        println!("[VERBOSE] Step: Encoding and saving PDF file...");
+    }
     // Save page and document bytes
     let mut warnings = Vec::new();
     let pdf_bytes = doc
@@ -274,7 +297,10 @@ pub fn bake_grid(
         }
     }
 
-    std::fs::write(output_path, pdf_bytes)?;
+    std::fs::write(&output_path, pdf_bytes)?;
+    if verbose {
+        println!("[VERBOSE] Step: Successfully wrote PDF to {:?}", output_path);
+    }
 
     Ok(())
 }
@@ -287,7 +313,11 @@ pub fn compose_grid(
     min_space_mm: f64,
     stroke_thickness_mm: f64,
     output_path: PathBuf,
+    verbose: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    if verbose {
+        println!("[VERBOSE] Step: Opening input image...");
+    }
     // 1. Open the image
     let img = ::image::ImageReader::open(&input_path)?
         .with_guessed_format()?
@@ -295,9 +325,16 @@ pub fn compose_grid(
     
     // 2. Determine target size and crop if needed
     let (width, height) = img.dimensions();
+    if verbose {
+        println!("[VERBOSE] Original image dimensions: {}x{} px", width, height);
+    }
+
     let (cropped, actual_size_px) = if let Some(s) = size_px {
         if width < s || height < s {
             return Err("Input image is smaller than the specified size".into());
+        }
+        if verbose {
+            println!("[VERBOSE] Step: Cropping image to {}x{} px...", s, s);
         }
         let cropped_img = if width == s && height == s {
             img
@@ -308,13 +345,22 @@ pub fn compose_grid(
         };
         (cropped_img, s)
     } else {
+        if verbose {
+            println!("[VERBOSE] Step: No cropping requested. Using original dimensions.");
+        }
         (img, std::cmp::max(width, height))
     };
 
     let (cropped_width, cropped_height) = cropped.dimensions();
+    if verbose {
+        println!("[VERBOSE] Resulting image dimensions: {}x{} px", cropped_width, cropped_height);
+    }
 
     let mut loops = Vec::new();
     if figure == FigureType::Mask {
+        if verbose {
+            println!("[VERBOSE] Step: Detecting background mask and tracing contour outline...");
+        }
         let bg_color = cropped.get_pixel(0, 0);
         let mut visited = vec![vec![false; cropped_width as usize]; cropped_height as usize];
         let mut q = std::collections::VecDeque::new();
@@ -418,12 +464,21 @@ pub fn compose_grid(
                 adj.remove(&start_pt);
             }
         }
+
+        if verbose {
+            let bg_pixel_count = visited.iter().map(|row| row.iter().filter(|&&v| v).count()).sum::<usize>();
+            let contour_point_count = loops.iter().map(|l| l.len()).sum::<usize>();
+            println!("[VERBOSE] Mask stats (for one figure): Background pixels = {} | Contour/outline vertices = {}", bg_pixel_count, contour_point_count);
+        }
     }
 
     // 4. Encode cropped image to PNG bytes in-memory
     let mut png_bytes: Vec<u8> = Vec::new();
     cropped.write_to(&mut std::io::Cursor::new(&mut png_bytes), ::image::ImageFormat::Png)?;
 
+    if verbose {
+        println!("[VERBOSE] Step: Decoding image into printpdf RawImage...");
+    }
     // 5. Decode into printpdf::RawImage
     let mut image_warnings = Vec::new();
     let pdf_image = RawImage::decode_from_bytes(&png_bytes, &mut image_warnings)
@@ -455,6 +510,11 @@ pub fn compose_grid(
     let margin_pt = margin_mm / 25.4 * 72.0;
     let gap_pt = gap_mm / 25.4 * 72.0;
 
+    if verbose {
+        println!("[VERBOSE] Grid details: Page size: {:.2}x{:.2} pt | Margins: {:.2} pt | Spacing (gap): {:.2} pt | Figure dimensions: {:.2}x{:.2} pt",
+                 page_width_pt, page_height_pt, margin_pt, gap_pt, width_pt, height_pt);
+    }
+
     let available_width = page_width_pt - 2.0 * margin_pt;
     let available_height = page_height_pt - 2.0 * margin_pt;
 
@@ -474,6 +534,10 @@ pub fn compose_grid(
         return Err(
             "No figures could fit on the page under the current margins and spacing.".into(),
         );
+    }
+
+    if verbose {
+        println!("[VERBOSE] Calculated grid layout: {} columns, {} rows (Total: {} figures)", cols, rows, cols * rows);
     }
 
     if figure == FigureType::Mask {
@@ -502,6 +566,9 @@ pub fn compose_grid(
         );
     }
 
+    if verbose {
+        println!("[VERBOSE] Step: Initializing PDF document...");
+    }
     // Initialize the PDF Document
     let mut doc = PdfDocument::new("Composed Grid");
 
@@ -516,6 +583,10 @@ pub fn compose_grid(
         usage: LayerSubtype::Artwork,
     };
     let graphics_layer_id = doc.add_layer(&graphics_layer);
+
+    if verbose {
+        println!("[VERBOSE] Step: Drawing vector outlines for figures...");
+    }
 
     // Create a raster layer on top
     let raster_layer = Layer {
@@ -723,6 +794,9 @@ pub fn compose_grid(
     // End Vector Layer
     ops.push(Op::EndLayer);
 
+    if verbose {
+        println!("[VERBOSE] Step: Drawing raster layer images...");
+    }
     // 2. Render the raster layer
     ops.push(Op::BeginLayer {
         layer_id: raster_layer_id,
@@ -755,6 +829,9 @@ pub fn compose_grid(
     // Create the page with A4 dimensions (Portrait)
     let page = PdfPage::new(Mm(page_width_mm), Mm(page_height_mm), ops);
 
+    if verbose {
+        println!("[VERBOSE] Step: Encoding and saving PDF file...");
+    }
     // Save page and document bytes
     let mut warnings = Vec::new();
     let pdf_bytes = doc
@@ -767,7 +844,10 @@ pub fn compose_grid(
         }
     }
 
-    std::fs::write(output_path, pdf_bytes)?;
+    std::fs::write(&output_path, pdf_bytes)?;
+    if verbose {
+        println!("[VERBOSE] Step: Successfully wrote PDF to {:?}", output_path);
+    }
 
     Ok(())
 }
