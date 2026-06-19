@@ -85,6 +85,10 @@ enum Commands {
         /// Algorithm to use for mask generation (basic or advanced)
         #[arg(long, value_enum, default_value = "advanced")]
         algorithm: MaskAlgorithmType,
+
+        /// Optimization level for RDP simplification (1 = low, 5 = high)
+        #[arg(long, default_value_t = 3, value_parser = clap::value_parser!(u8).range(1..=5))]
+        rdp_level: u8,
     },
 }
 
@@ -124,6 +128,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             stroke_thickness,
             output,
             algorithm,
+            rdp_level,
         } => {
             if output.exists() && !force {
                 return Err(format!(
@@ -142,6 +147,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 output,
                 verbose,
                 algorithm,
+                rdp_level,
             )?;
         }
     }

@@ -202,7 +202,9 @@ pub fn simplify_rdp(points: &[(i32, i32)], epsilon: f64) -> Vec<(i32, i32)> {
 }
 
 /// An advanced mask tracing implementation that simplifies the traced outline.
-pub struct AdvancedTracer;
+pub struct AdvancedTracer {
+    pub rdp_level: u8,
+}
 
 impl MaskAlgorithm for AdvancedTracer {
     fn trace_mask(
@@ -232,9 +234,18 @@ impl MaskAlgorithm for AdvancedTracer {
         }
 
         let mut simplified_loops = Vec::new();
+        // Map rdp_level to epsilon
+        let epsilon = match self.rdp_level {
+            1 => 0.5,
+            2 => 1.0,
+            3 => 1.5,
+            4 => 2.0,
+            5 => 3.0,
+            _ => 1.5,
+        };
         for lp in raw_loops {
-            // Apply RDP simplification with epsilon = 1.5 pixels
-            let simplified = simplify_rdp(&lp, 1.5);
+            // Apply RDP simplification with mapped epsilon
+            let simplified = simplify_rdp(&lp, epsilon);
             if simplified.len() >= 4 {
                 simplified_loops.push(simplified);
             }
@@ -301,7 +312,7 @@ mod tests {
 
         let dyn_img = DynamicImage::ImageRgba8(img);
         let basic = BasicTracer.trace_mask(&dyn_img, false).unwrap();
-        let advanced = AdvancedTracer.trace_mask(&dyn_img, false).unwrap();
+        let advanced = AdvancedTracer { rdp_level: 3 }.trace_mask(&dyn_img, false).unwrap();
 
         let basic_vertices: usize = basic.iter().map(|l| l.len()).sum();
         let advanced_vertices: usize = advanced.iter().map(|l| l.len()).sum();
@@ -328,10 +339,40 @@ mod tests {
         }
 
         let dyn_img = DynamicImage::ImageRgba8(img);
-        let result = AdvancedTracer.trace_mask(&dyn_img, false);
+        let result = AdvancedTracer { rdp_level: 3 }.trace_mask(&dyn_img, false);
         assert!(result.is_err());
         let err_msg = result.err().unwrap().to_string();
         assert!(err_msg.contains("too complex") || err_msg.contains("loops"));
+    }
+
+    #[test]
+    fn test_advanced_tracer_rdp_levels() {
+        let mut img = RgbaImage::new(40, 40);
+        let white = Rgba([255, 255, 255, 255]);
+        let black = Rgba([0, 0, 0, 255]);
+
+        // Create a jagged/pixelated shape (a stair-step circle/diamond)
+        for y in 0..40 {
+            for x in 0..40 {
+                let dx = (x as i32 - 20).abs();
+                let dy = (y as i32 - 20).abs();
+                if dx + dy < 15 {
+                    img.put_pixel(x, y, black);
+                } else {
+                    img.put_pixel(x, y, white);
+                }
+            }
+        }
+
+        let dyn_img = DynamicImage::ImageRgba8(img);
+        let level1 = AdvancedTracer { rdp_level: 1 }.trace_mask(&dyn_img, false).unwrap();
+        let level5 = AdvancedTracer { rdp_level: 5 }.trace_mask(&dyn_img, false).unwrap();
+
+        let l1_vertices: usize = level1.iter().map(|l| l.len()).sum();
+        let l5_vertices: usize = level5.iter().map(|l| l.len()).sum();
+
+        // Higher rdp_level should optimize more aggressively, resulting in fewer vertices
+        assert!(l5_vertices < l1_vertices);
     }
 }
 

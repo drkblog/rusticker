@@ -323,6 +323,7 @@ pub fn compose_grid(
     output_path: PathBuf,
     verbose: bool,
     algorithm: MaskAlgorithmType,
+    rdp_level: u8,
 ) -> Result<(), Box<dyn std::error::Error>> {
     if verbose {
         println!("[VERBOSE] Step: Opening input image...");
@@ -376,7 +377,7 @@ pub fn compose_grid(
                 loops = tracer.trace_mask(&cropped, verbose)?;
             }
             MaskAlgorithmType::Advanced => {
-                let tracer = AdvancedTracer;
+                let tracer = AdvancedTracer { rdp_level };
                 loops = tracer.trace_mask(&cropped, verbose)?;
             }
         }
