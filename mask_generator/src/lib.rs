@@ -4,12 +4,12 @@ use std::collections::{HashMap, VecDeque};
 /// Trait representing an algorithm for tracing the contour mask of an image.
 pub trait MaskAlgorithm {
     /// Traces the boundary outline loops of the mask from the input image.
-    /// Returns a list of loops, where each loop is a list of coordinates (x, y).
+    /// Returns a list of loops, where each loop is a list of coordinates ((x, y), is_bezier).
     fn trace_mask(
         &self,
         img: &DynamicImage,
         verbose: bool,
-    ) -> Result<Vec<Vec<(i32, i32)>>, Box<dyn std::error::Error>>;
+    ) -> Result<Vec<Vec<((f64, f64), bool)>>, Box<dyn std::error::Error>>;
 }
 
 /// A mask tracing implementation using a flood-fill algorithm to detect
@@ -21,7 +21,7 @@ impl MaskAlgorithm for BasicTracer {
         &self,
         img: &DynamicImage,
         verbose: bool,
-    ) -> Result<Vec<Vec<(i32, i32)>>, Box<dyn std::error::Error>> {
+    ) -> Result<Vec<Vec<((f64, f64), bool)>>, Box<dyn std::error::Error>> {
         let (width, height) = img.dimensions();
         if width == 0 || height == 0 {
             return Ok(Vec::new());
@@ -136,10 +136,13 @@ impl MaskAlgorithm for BasicTracer {
             println!("[VERBOSE] Mask stats (for one figure): Background pixels = {} | Contour/outline vertices = {}", bg_pixel_count, contour_point_count);
         }
 
-        Ok(loops)
+        let mapped_loops = loops
+            .into_iter()
+            .map(|lp| lp.into_iter().map(|p| ((p.0 as f64, p.1 as f64), false)).collect())
+            .collect();
+        Ok(mapped_loops)
     }
 }
-
 fn perpendicular_distance(p: (f64, f64), a: (f64, f64), b: (f64, f64)) -> f64 {
     let dx = b.0 - a.0;
     let dy = b.1 - a.1;
@@ -154,19 +157,19 @@ fn perpendicular_distance(p: (f64, f64), a: (f64, f64), b: (f64, f64)) -> f64 {
     }
 }
 
-fn rdp_recursive(points: &[(i32, i32)], epsilon: f64, start: usize, end: usize, keep: &mut [bool]) {
+fn rdp_recursive(points: &[(f64, f64)], epsilon: f64, start: usize, end: usize, keep: &mut [bool]) {
     if end <= start + 1 {
         return;
     }
 
-    let p_start = (points[start].0 as f64, points[start].1 as f64);
-    let p_end = (points[end].0 as f64, points[end].1 as f64);
+    let p_start = points[start];
+    let p_end = points[end];
 
     let mut d_max = 0.0;
     let mut index = start;
 
     for i in (start + 1)..end {
-        let p = (points[i].0 as f64, points[i].1 as f64);
+        let p = points[i];
         let dist = perpendicular_distance(p, p_start, p_end);
         if dist > d_max {
             d_max = dist;
@@ -181,7 +184,7 @@ fn rdp_recursive(points: &[(i32, i32)], epsilon: f64, start: usize, end: usize, 
     }
 }
 
-pub fn simplify_rdp(points: &[(i32, i32)], epsilon: f64) -> Vec<(i32, i32)> {
+pub fn simplify_rdp(points: &[(f64, f64)], epsilon: f64) -> Vec<(f64, f64)> {
     if points.len() <= 2 {
         return points.to_vec();
     }
@@ -211,7 +214,7 @@ impl MaskAlgorithm for AdvancedTracer {
         &self,
         img: &DynamicImage,
         verbose: bool,
-    ) -> Result<Vec<Vec<(i32, i32)>>, Box<dyn std::error::Error>> {
+    ) -> Result<Vec<Vec<((f64, f64), bool)>>, Box<dyn std::error::Error>> {
         // Use BasicTracer to get raw mask outline
         let raw_loops = BasicTracer.trace_mask(img, false)?;
 
@@ -244,10 +247,17 @@ impl MaskAlgorithm for AdvancedTracer {
             _ => 1.5,
         };
         for lp in raw_loops {
+            // Extract coordinates
+            let pts: Vec<(f64, f64)> = lp.iter().map(|&(p, _)| p).collect();
             // Apply RDP simplification with mapped epsilon
-            let simplified = simplify_rdp(&lp, epsilon);
-            if simplified.len() >= 4 {
-                simplified_loops.push(simplified);
+            let simplified_pts = simplify_rdp(&pts, epsilon);
+            if simplified_pts.len() >= 4 {
+                // Reconstruct with bezier = false
+                let simplified_lp: Vec<((f64, f64), bool)> = simplified_pts
+                    .into_iter()
+                    .map(|p| (p, false))
+                    .collect();
+                simplified_loops.push(simplified_lp);
             }
         }
 
@@ -269,6 +279,117 @@ impl MaskAlgorithm for AdvancedTracer {
     }
 }
 
+/// A mask tracing implementation that simplifies the traced outline and smooths it using quadratic B-splines.
+pub struct CurvesTracer {
+    pub rdp_level: u8,
+}
+
+impl MaskAlgorithm for CurvesTracer {
+    fn trace_mask(
+        &self,
+        img: &DynamicImage,
+        verbose: bool,
+    ) -> Result<Vec<Vec<((f64, f64), bool)>>, Box<dyn std::error::Error>> {
+        // Use BasicTracer to get raw mask outline
+        let raw_loops = BasicTracer.trace_mask(img, false)?;
+
+        let loops_count = raw_loops.len();
+        let total_vertices: usize = raw_loops.iter().map(|lp| lp.len()).sum();
+
+        if total_vertices > 5000 || loops_count > 20 {
+            return Err(format!(
+                "Image is too complex: outline contains {} vertices and {} loops. The maximum supported limits are 5000 vertices and 20 loops.",
+                total_vertices, loops_count
+            )
+            .into());
+        }
+
+        if verbose {
+            println!(
+                "[VERBOSE] Curves algorithm: Mask stats before simplification: Loops = {} | Contour/outline vertices = {}",
+                loops_count, total_vertices
+            );
+        }
+
+        let mut curve_loops = Vec::new();
+        let epsilon = match self.rdp_level {
+            1 => 0.5,
+            2 => 1.0,
+            3 => 1.5,
+            4 => 2.0,
+            5 => 3.0,
+            _ => 1.5,
+        };
+
+        for lp in raw_loops {
+            // Extract coordinates
+            let pts: Vec<(f64, f64)> = lp.iter().map(|&(p, _)| p).collect();
+            // Simplify using RDP
+            let mut simplified = simplify_rdp(&pts, epsilon);
+            
+            if simplified.len() >= 4 {
+                // Remove duplicate start/end point to get unique vertices
+                if simplified.first() == simplified.last() {
+                    simplified.pop();
+                }
+
+                let m = simplified.len();
+                if m >= 3 {
+                    let mut b_spline_points = Vec::new();
+
+                    for i in 0..m {
+                        let prev = simplified[(i + m - 1) % m];
+                        let curr = simplified[i];
+                        let next = simplified[(i + 1) % m];
+
+                        // Calculate midpoints of adjacent edges
+                        let m_in = ((prev.0 + curr.0) / 2.0, (prev.1 + curr.1) / 2.0);
+                        let m_out = ((curr.0 + next.0) / 2.0, (curr.1 + next.1) / 2.0);
+
+                        // Convert quadratic Bezier curve to cubic Bezier curve:
+                        // Q1 = 1/3 m_in + 2/3 curr
+                        // Q2 = 1/3 m_out + 2/3 curr
+                        let q1 = (m_in.0 / 3.0 + 2.0 * curr.0 / 3.0, m_in.1 / 3.0 + 2.0 * curr.1 / 3.0);
+                        let q2 = (m_out.0 / 3.0 + 2.0 * curr.0 / 3.0, m_out.1 / 3.0 + 2.0 * curr.1 / 3.0);
+
+                        // If first corner, push the start point
+                        if i == 0 {
+                            b_spline_points.push((m_in, false));
+                        }
+
+                        // Push first control point
+                        b_spline_points.push((q1, true));
+
+                        // Push second control point
+                        b_spline_points.push((q2, true));
+
+                        // Push end endpoint of this segment
+                        b_spline_points.push((m_out, false));
+                    }
+
+                    curve_loops.push(b_spline_points);
+                }
+            }
+        }
+
+        let curve_vertices: usize = curve_loops.iter().map(|lp| lp.len()).sum();
+
+        if verbose {
+            let reduction = if total_vertices > 0 {
+                (total_vertices - curve_vertices) as f64 / total_vertices as f64 * 100.0
+            } else {
+                0.0
+            };
+            println!(
+                "[VERBOSE] Curves algorithm: Mask stats after B-spline smoothing: Loops = {} | Contour/outline vertices = {} ({:.1}% reduction/change)",
+                curve_loops.len(), curve_vertices, reduction
+            );
+        }
+
+        Ok(curve_loops)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -278,19 +399,19 @@ mod tests {
     fn test_rdp_simplification() {
         // A stair-step diagonal line from (0,0) to (4,4)
         let stair_steps = vec![
-            (0, 0),
-            (1, 0),
-            (1, 1),
-            (2, 1),
-            (2, 2),
-            (3, 2),
-            (3, 3),
-            (4, 3),
-            (4, 4),
+            (0.0, 0.0),
+            (1.0, 0.0),
+            (1.0, 1.0),
+            (2.0, 1.0),
+            (2.0, 2.0),
+            (3.0, 2.0),
+            (3.0, 3.0),
+            (4.0, 3.0),
+            (4.0, 4.0),
         ];
         // With epsilon = 1.5, it should simplify to a straight diagonal line
         let simplified = simplify_rdp(&stair_steps, 1.5);
-        assert_eq!(simplified, vec![(0, 0), (4, 4)]);
+        assert_eq!(simplified, vec![(0.0, 0.0), (4.0, 4.0)]);
     }
 
     #[test]
@@ -373,6 +494,47 @@ mod tests {
 
         // Higher rdp_level should optimize more aggressively, resulting in fewer vertices
         assert!(l5_vertices < l1_vertices);
+    }
+
+    #[test]
+    fn test_curves_tracer() {
+        let mut img = RgbaImage::new(20, 20);
+        let white = Rgba([255, 255, 255, 255]);
+        let black = Rgba([0, 0, 0, 255]);
+
+        // Draw a 10x10 square
+        for y in 0..20 {
+            for x in 0..20 {
+                if x >= 5 && x < 15 && y >= 5 && y < 15 {
+                    img.put_pixel(x, y, black);
+                } else {
+                    img.put_pixel(x, y, white);
+                }
+            }
+        }
+
+        let dyn_img = DynamicImage::ImageRgba8(img);
+        let curves = CurvesTracer { rdp_level: 3 }.trace_mask(&dyn_img, false).unwrap();
+
+        assert!(!curves.is_empty());
+        let loop0 = &curves[0];
+        assert_eq!(loop0.len(), 13); // 3 * 4 unique vertices + 1 start point = 13
+
+        // Check starting and ending points are equal
+        assert_eq!(loop0.first().unwrap().0, loop0.last().unwrap().0);
+
+        // Check alternating cubic bezier flags: false, true, true, false, true, true, false...
+        assert_eq!(loop0.first().unwrap().1, false);
+        assert_eq!(loop0.last().unwrap().1, false);
+
+        let bezier_flags: Vec<bool> = loop0.iter().map(|&(_, b)| b).collect();
+        assert_eq!(bezier_flags[0], false);
+        assert_eq!(bezier_flags[1], true);
+        assert_eq!(bezier_flags[2], true);
+        assert_eq!(bezier_flags[3], false);
+        assert_eq!(bezier_flags[4], true);
+        assert_eq!(bezier_flags[5], true);
+        assert_eq!(bezier_flags[6], false);
     }
 }
 

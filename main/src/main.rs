@@ -82,7 +82,7 @@ enum Commands {
         #[arg(short, long, default_value = "composed.pdf")]
         output: PathBuf,
 
-        /// Algorithm to use for mask generation (basic or advanced)
+        /// Algorithm to use for mask generation (basic, advanced, or curves)
         #[arg(long, value_enum, default_value = "advanced")]
         algorithm: MaskAlgorithmType,
 

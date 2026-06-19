@@ -2,7 +2,7 @@ use clap::ValueEnum;
 use ::image::GenericImageView;
 use printpdf::*;
 use std::path::PathBuf;
-use mask_generator::{MaskAlgorithm, BasicTracer, AdvancedTracer};
+use mask_generator::{MaskAlgorithm, BasicTracer, AdvancedTracer, CurvesTracer};
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FigureType {
@@ -15,7 +15,9 @@ pub enum FigureType {
 pub enum MaskAlgorithmType {
     Basic,
     Advanced,
+    Curves,
 }
+
 
 
 pub fn bake_grid(
@@ -380,6 +382,10 @@ pub fn compose_grid(
                 let tracer = AdvancedTracer { rdp_level };
                 loops = tracer.trace_mask(&cropped, verbose)?;
             }
+            MaskAlgorithmType::Curves => {
+                let tracer = CurvesTracer { rdp_level };
+                loops = tracer.trace_mask(&cropped, verbose)?;
+            }
         }
     }
 
@@ -680,15 +686,15 @@ pub fn compose_grid(
                     let scale = 72.0 / (dpi as f64);
                     for lp in &loops {
                         let mut points = Vec::new();
-                        for &(cx, cy) in lp {
-                            let lx = x + (cx - 1) as f64 * scale;
-                            let ly = y + (cropped_height as f64 - (cy - 1) as f64) * scale;
+                        for &((cx, cy), is_bezier) in lp {
+                            let lx = x + (cx - 1.0) * scale;
+                            let ly = y + (cropped_height as f64 - (cy - 1.0)) * scale;
                             points.push(LinePoint {
                                 p: Point {
                                     x: Pt(lx as f32),
                                     y: Pt(ly as f32),
                                 },
-                                bezier: false,
+                                bezier: is_bezier,
                             });
                         }
                         let line = Line {
