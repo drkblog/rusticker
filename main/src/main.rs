@@ -1,5 +1,5 @@
 use clap::{Parser, Subcommand};
-use rusticker::{bake_grid, compose_grid, FigureType};
+use rusticker::{bake_grid, compose_grid, FigureType, MaskAlgorithmType};
 use std::path::PathBuf;
 
 /// Rusticker CLI application
@@ -81,6 +81,10 @@ enum Commands {
         /// Output file path for the PDF
         #[arg(short, long, default_value = "composed.pdf")]
         output: PathBuf,
+
+        /// Algorithm to use for mask generation (basic or advanced)
+        #[arg(long, value_enum, default_value = "advanced")]
+        algorithm: MaskAlgorithmType,
     },
 }
 
@@ -119,6 +123,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             min_space,
             stroke_thickness,
             output,
+            algorithm,
         } => {
             if output.exists() && !force {
                 return Err(format!(
@@ -127,7 +132,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 )
                 .into());
             }
-            compose_grid(figure, input, size, dpi, min_space, stroke_thickness, output, verbose)?;
+            compose_grid(
+                figure,
+                input,
+                size,
+                dpi,
+                min_space,
+                stroke_thickness,
+                output,
+                verbose,
+                algorithm,
+            )?;
         }
     }
 

@@ -2,7 +2,7 @@ use clap::ValueEnum;
 use ::image::GenericImageView;
 use printpdf::*;
 use std::path::PathBuf;
-use mask_generator::{MaskAlgorithm, FloodFillTracer};
+use mask_generator::{MaskAlgorithm, BasicTracer, AdvancedTracer};
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FigureType {
@@ -10,6 +10,13 @@ pub enum FigureType {
     Circle,
     Mask,
 }
+
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MaskAlgorithmType {
+    Basic,
+    Advanced,
+}
+
 
 pub fn bake_grid(
     figure: FigureType,
@@ -315,6 +322,7 @@ pub fn compose_grid(
     stroke_thickness_mm: f64,
     output_path: PathBuf,
     verbose: bool,
+    algorithm: MaskAlgorithmType,
 ) -> Result<(), Box<dyn std::error::Error>> {
     if verbose {
         println!("[VERBOSE] Step: Opening input image...");
@@ -360,10 +368,18 @@ pub fn compose_grid(
     let mut loops = Vec::new();
     if figure == FigureType::Mask {
         if verbose {
-            println!("[VERBOSE] Step: Detecting background mask and tracing contour outline...");
+            println!("[VERBOSE] Step: Detecting background mask and tracing contour outline using {:?} algorithm...", algorithm);
         }
-        let tracer = FloodFillTracer;
-        loops = tracer.trace_mask(&cropped, verbose)?;
+        match algorithm {
+            MaskAlgorithmType::Basic => {
+                let tracer = BasicTracer;
+                loops = tracer.trace_mask(&cropped, verbose)?;
+            }
+            MaskAlgorithmType::Advanced => {
+                let tracer = AdvancedTracer;
+                loops = tracer.trace_mask(&cropped, verbose)?;
+            }
+        }
     }
 
     // 4. Encode cropped image to PNG bytes in-memory

@@ -14,9 +14,9 @@ pub trait MaskAlgorithm {
 
 /// A mask tracing implementation using a flood-fill algorithm to detect
 /// background pixels and contour tracing to extract boundary loops.
-pub struct FloodFillTracer;
+pub struct BasicTracer;
 
-impl MaskAlgorithm for FloodFillTracer {
+impl MaskAlgorithm for BasicTracer {
     fn trace_mask(
         &self,
         img: &DynamicImage,
@@ -139,3 +139,78 @@ impl MaskAlgorithm for FloodFillTracer {
         Ok(loops)
     }
 }
+
+/// An advanced mask tracing implementation (currently delegating to `BasicTracer`).
+pub struct AdvancedTracer;
+
+impl MaskAlgorithm for AdvancedTracer {
+    fn trace_mask(
+        &self,
+        img: &DynamicImage,
+        verbose: bool,
+    ) -> Result<Vec<Vec<(i32, i32)>>, Box<dyn std::error::Error>> {
+        BasicTracer.trace_mask(img, verbose)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use image::{Rgba, RgbaImage};
+
+    fn normalize_loops(loops: &[Vec<(i32, i32)>]) -> Vec<Vec<(i32, i32)>> {
+        let mut normalized: Vec<Vec<(i32, i32)>> = loops
+            .iter()
+            .map(|lp| {
+                if lp.is_empty() {
+                    return lp.clone();
+                }
+                let mut pts = lp.clone();
+                if pts.first() == pts.last() && pts.len() > 1 {
+                    pts.pop();
+                }
+                if let Some((min_idx, _)) = pts
+                    .iter()
+                    .enumerate()
+                    .min_by_key(|&(_, p)| p)
+                {
+                    pts.rotate_left(min_idx);
+                }
+                pts.push(*pts.first().unwrap());
+                pts
+            })
+            .collect();
+        normalized.sort_by_key(|lp| lp.first().copied());
+        normalized
+    }
+
+    #[test]
+    fn test_tracers_match() {
+        let mut img = RgbaImage::new(10, 10);
+        let white = Rgba([255, 255, 255, 255]);
+        let black = Rgba([0, 0, 0, 255]);
+
+        for y in 0..10 {
+            for x in 0..10 {
+                if x >= 3 && x < 7 && y >= 3 && y < 7 {
+                    img.put_pixel(x, y, black);
+                } else {
+                    img.put_pixel(x, y, white);
+                }
+            }
+        }
+
+        let dyn_img = DynamicImage::ImageRgba8(img);
+        let basic = BasicTracer.trace_mask(&dyn_img, false).unwrap();
+        let advanced = AdvancedTracer.trace_mask(&dyn_img, false).unwrap();
+
+        let norm_basic = normalize_loops(&basic);
+        let norm_advanced = normalize_loops(&advanced);
+
+        assert_eq!(norm_basic, norm_advanced);
+        assert!(!norm_basic.is_empty());
+    }
+}
+
+
+
