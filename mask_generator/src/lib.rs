@@ -140,7 +140,68 @@ impl MaskAlgorithm for BasicTracer {
     }
 }
 
-/// An advanced mask tracing implementation (currently delegating to `BasicTracer`).
+fn perpendicular_distance(p: (f64, f64), a: (f64, f64), b: (f64, f64)) -> f64 {
+    let dx = b.0 - a.0;
+    let dy = b.1 - a.1;
+    let len_sq = dx * dx + dy * dy;
+    if len_sq == 0.0 {
+        let px = p.0 - a.0;
+        let py = p.1 - a.1;
+        (px * px + py * py).sqrt()
+    } else {
+        let num = (dx * (p.1 - a.1) - dy * (p.0 - a.0)).abs();
+        num / len_sq.sqrt()
+    }
+}
+
+fn rdp_recursive(points: &[(i32, i32)], epsilon: f64, start: usize, end: usize, keep: &mut [bool]) {
+    if end <= start + 1 {
+        return;
+    }
+
+    let p_start = (points[start].0 as f64, points[start].1 as f64);
+    let p_end = (points[end].0 as f64, points[end].1 as f64);
+
+    let mut d_max = 0.0;
+    let mut index = start;
+
+    for i in (start + 1)..end {
+        let p = (points[i].0 as f64, points[i].1 as f64);
+        let dist = perpendicular_distance(p, p_start, p_end);
+        if dist > d_max {
+            d_max = dist;
+            index = i;
+        }
+    }
+
+    if d_max > epsilon {
+        keep[index] = true;
+        rdp_recursive(points, epsilon, start, index, keep);
+        rdp_recursive(points, epsilon, index, end, keep);
+    }
+}
+
+pub fn simplify_rdp(points: &[(i32, i32)], epsilon: f64) -> Vec<(i32, i32)> {
+    if points.len() <= 2 {
+        return points.to_vec();
+    }
+
+    let mut keep = vec![false; points.len()];
+    keep[0] = true;
+    keep[points.len() - 1] = true;
+
+    rdp_recursive(points, epsilon, 0, points.len() - 1, &mut keep);
+
+    let mut simplified = Vec::new();
+    for i in 0..points.len() {
+        if keep[i] {
+            simplified.push(points[i]);
+        }
+    }
+    simplified
+}
+
+/// An advanced mask tracing implementation that simplifies the traced outline.
 pub struct AdvancedTracer;
 
 impl MaskAlgorithm for AdvancedTracer {
@@ -149,7 +210,51 @@ impl MaskAlgorithm for AdvancedTracer {
         img: &DynamicImage,
         verbose: bool,
     ) -> Result<Vec<Vec<(i32, i32)>>, Box<dyn std::error::Error>> {
-        BasicTracer.trace_mask(img, verbose)
+        // Use BasicTracer to get raw mask outline
+        let raw_loops = BasicTracer.trace_mask(img, false)?;
+
+        let loops_count = raw_loops.len();
+        let total_vertices: usize = raw_loops.iter().map(|lp| lp.len()).sum();
+
+        if total_vertices > 5000 || loops_count > 20 {
+            return Err(format!(
+                "Image is too complex: outline contains {} vertices and {} loops. The maximum supported limits are 5000 vertices and 20 loops.",
+                total_vertices, loops_count
+            )
+            .into());
+        }
+
+        if verbose {
+            println!(
+                "[VERBOSE] Mask stats before simplification: Loops = {} | Contour/outline vertices = {}",
+                loops_count, total_vertices
+            );
+        }
+
+        let mut simplified_loops = Vec::new();
+        for lp in raw_loops {
+            // Apply RDP simplification with epsilon = 1.5 pixels
+            let simplified = simplify_rdp(&lp, 1.5);
+            if simplified.len() >= 4 {
+                simplified_loops.push(simplified);
+            }
+        }
+
+        let simplified_vertices: usize = simplified_loops.iter().map(|lp| lp.len()).sum();
+
+        if verbose {
+            let reduction = if total_vertices > 0 {
+                (total_vertices - simplified_vertices) as f64 / total_vertices as f64 * 100.0
+            } else {
+                0.0
+            };
+            println!(
+                "[VERBOSE] Mask stats after simplification: Loops = {} | Contour/outline vertices = {} ({:.1}% reduction)",
+                simplified_loops.len(), simplified_vertices, reduction
+            );
+        }
+
+        Ok(simplified_loops)
     }
 }
 
@@ -158,41 +263,35 @@ mod tests {
     use super::*;
     use image::{Rgba, RgbaImage};
 
-    fn normalize_loops(loops: &[Vec<(i32, i32)>]) -> Vec<Vec<(i32, i32)>> {
-        let mut normalized: Vec<Vec<(i32, i32)>> = loops
-            .iter()
-            .map(|lp| {
-                if lp.is_empty() {
-                    return lp.clone();
-                }
-                let mut pts = lp.clone();
-                if pts.first() == pts.last() && pts.len() > 1 {
-                    pts.pop();
-                }
-                if let Some((min_idx, _)) = pts
-                    .iter()
-                    .enumerate()
-                    .min_by_key(|&(_, p)| p)
-                {
-                    pts.rotate_left(min_idx);
-                }
-                pts.push(*pts.first().unwrap());
-                pts
-            })
-            .collect();
-        normalized.sort_by_key(|lp| lp.first().copied());
-        normalized
+    #[test]
+    fn test_rdp_simplification() {
+        // A stair-step diagonal line from (0,0) to (4,4)
+        let stair_steps = vec![
+            (0, 0),
+            (1, 0),
+            (1, 1),
+            (2, 1),
+            (2, 2),
+            (3, 2),
+            (3, 3),
+            (4, 3),
+            (4, 4),
+        ];
+        // With epsilon = 1.5, it should simplify to a straight diagonal line
+        let simplified = simplify_rdp(&stair_steps, 1.5);
+        assert_eq!(simplified, vec![(0, 0), (4, 4)]);
     }
 
     #[test]
-    fn test_tracers_match() {
-        let mut img = RgbaImage::new(10, 10);
+    fn test_advanced_tracer_simplifies() {
+        let mut img = RgbaImage::new(20, 20);
         let white = Rgba([255, 255, 255, 255]);
         let black = Rgba([0, 0, 0, 255]);
 
-        for y in 0..10 {
-            for x in 0..10 {
-                if x >= 3 && x < 7 && y >= 3 && y < 7 {
+        // Draw a 10x10 square
+        for y in 0..20 {
+            for x in 0..20 {
+                if x >= 5 && x < 15 && y >= 5 && y < 15 {
                     img.put_pixel(x, y, black);
                 } else {
                     img.put_pixel(x, y, white);
@@ -204,13 +303,38 @@ mod tests {
         let basic = BasicTracer.trace_mask(&dyn_img, false).unwrap();
         let advanced = AdvancedTracer.trace_mask(&dyn_img, false).unwrap();
 
-        let norm_basic = normalize_loops(&basic);
-        let norm_advanced = normalize_loops(&advanced);
+        let basic_vertices: usize = basic.iter().map(|l| l.len()).sum();
+        let advanced_vertices: usize = advanced.iter().map(|l| l.len()).sum();
 
-        assert_eq!(norm_basic, norm_advanced);
-        assert!(!norm_basic.is_empty());
+        // Advanced should have fewer vertices due to simplification
+        assert!(advanced_vertices < basic_vertices);
+        assert!(advanced_vertices > 0);
+    }
+
+    #[test]
+    fn test_advanced_tracer_complexity_limit() {
+        let mut img = RgbaImage::new(150, 150);
+        let black = Rgba([0, 0, 0, 255]);
+
+        // Draw 30 disjoint checkerboard squares (each will create a loop)
+        for i in 0..30 {
+            let start_x = (i % 5) * 20 + 5;
+            let start_y = (i / 5) * 20 + 5;
+            for y in start_y..(start_y + 10) {
+                for x in start_x..(start_x + 10) {
+                    img.put_pixel(x, y, black);
+                }
+            }
+        }
+
+        let dyn_img = DynamicImage::ImageRgba8(img);
+        let result = AdvancedTracer.trace_mask(&dyn_img, false);
+        assert!(result.is_err());
+        let err_msg = result.err().unwrap().to_string();
+        assert!(err_msg.contains("too complex") || err_msg.contains("loops"));
     }
 }
+
 
 
 
