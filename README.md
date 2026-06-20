@@ -65,7 +65,37 @@ rusticker compose [OPTIONS] --figure <FIGURE> --input <INPUT>
 - `--size <SIZE>`: (Optional) Size of the figure in pixels. If not provided, no cropping is performed and the largest dimension of the input image is used as the base size.
 - `--min-space <MIN_SPACE>`: Minimum spacing in millimeters between adjacent figures [default: `2.0`].
 - `--stroke-thickness <STROKE_THICKNESS>`: Stroke thickness of the outline in millimeters [default: `1.0`].
+- `--algorithm <ALGORITHM>`: Algorithm to use for mask generation (`basic`, `advanced`, or `curves`). Only used when `--figure mask` is selected [default: `advanced`]:
+  - `basic`: Traces exact pixel-stepped straight lines around the mask boundary.
+  - `advanced`: Simplifies the outline using the Ramer-Douglas-Peucker (RDP) algorithm to drastically reduce vector segments.
+  - `curves`: Converts the RDP simplified outline into smooth cubic Bézier curves (quadratic B-splines) for optimal vinyl plotter cutting.
+- `--rdp-level <RDP_LEVEL>`: Aggressiveness of RDP segment reduction. Accepts a value from `1` (least reduction, more segments) to `5` (most reduction, fewest segments) [default: `3`].
 - `-o, --output <OUTPUT>`: Output PDF file path [default: `composed.pdf`].
+
+### Mask Generation Algorithms
+
+When using `--figure mask`, the tool automatically detects background pixels (matching the color at `(0, 0)`) and traces a custom outline around the foreground sticker. You can choose from three different algorithms to trace the outline:
+
+- **`basic`**: Traces exact pixel-stepped straight lines around the mask boundary.
+- **`advanced` (Default)**: Simplifies the outline using the Ramer-Douglas-Peucker (RDP) algorithm to drastically reduce vector segments.
+- **`curves`**: Smooths the contour by converting the RDP-simplified outline into smooth cubic Bézier curves (quadratic B-splines) for optimal vinyl plotter cutting.
+
+#### Optimization Levels (`--rdp-level`)
+
+Controls the aggressiveness of the RDP segment reduction. It accepts a value from `1` to `5` [default: `3`]:
+- **`1`**: Low optimization (more segments left, $\epsilon = 0.5$).
+- **`2`**: Moderate-low optimization ($\epsilon = 1.0$).
+- **`3`**: Medium optimization ($\epsilon = 1.5$).
+- **`4`**: High optimization ($\epsilon = 2.0$).
+- **`5`**: Maximum optimization (fewest segments, $\epsilon = 3.0$).
+
+#### Complexity Limits & Safety Safeguards
+
+To prevent hangs or extremely large output files on complex or noisy images, `rusticker` enforces complexity limits on mask generation. If an image generates:
+- More than **5,000 vertices** in the raw outline, or
+- More than **20 separate loops**
+
+The tool will abort with an error message detailing the complexity. For noisy images, clean up the background to a solid color before processing.
 
 ---
 
@@ -79,4 +109,9 @@ cargo run -- bake --figure square --size 150 --stroke-thickness 1.5 -o grid_squa
 ### Force overwrite an existing composed circle grid using an image
 ```bash
 cargo run -- --force compose --figure circle --input my_sticker.png --size 120 --stroke-thickness 2.0 -o output_composed.pdf
+```
+
+### Compose smooth vectorial curves around a mask foreground
+```bash
+cargo run -- compose --figure mask --algorithm curves --rdp-level 4 --input my_sticker.png -o smooth_curves.pdf
 ```

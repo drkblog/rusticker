@@ -97,7 +97,7 @@ impl MaskAlgorithm for BasicTracer {
 
         let mut loops = Vec::new();
         while !adj.is_empty() {
-            let &start_pt = adj.keys().next().unwrap();
+            let &start_pt = adj.keys().min().unwrap();
             if adj.get(&start_pt).map_or(true, |v| v.is_empty()) {
                 adj.remove(&start_pt);
                 continue;
