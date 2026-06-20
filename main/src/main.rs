@@ -40,9 +40,13 @@ enum Commands {
         #[arg(long, value_enum)]
         figure: FigureType,
 
-        /// Size of the figure in pixels (side for square, diameter for circle)
+        /// Diameter of the circle in pixels (required for circle)
         #[arg(long)]
-        size: u32,
+        diameter: Option<u32>,
+
+        /// Side length of the square in pixels (required for square)
+        #[arg(long)]
+        side: Option<u32>,
 
         /// Minimum space in millimeters between a figure and the others surrounding it
         #[arg(long, default_value_t = 2.0)]
@@ -66,7 +70,15 @@ enum Commands {
         #[arg(long)]
         input: PathBuf,
 
-        /// Size of the figure in pixels (side for square, diameter for circle)
+        /// Diameter of the circle in pixels (optional for circle)
+        #[arg(long)]
+        diameter: Option<u32>,
+
+        /// Side length of the square in pixels (optional for square)
+        #[arg(long)]
+        side: Option<u32>,
+
+        /// Size of the mask figure in pixels
         #[arg(long)]
         size: Option<u32>,
 
@@ -106,7 +118,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     match cli.command {
         Commands::Bake {
             figure,
-            size,
+            diameter,
+            side,
             min_space,
             stroke_thickness,
             output,
@@ -118,11 +131,38 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 )
                 .into());
             }
+            let size = match figure {
+                FigureType::Circle => {
+                    if let Some(d) = diameter {
+                        if side.is_some() {
+                            return Err("Error: Cannot specify --side for a circle figure. Use --diameter instead.".into());
+                        }
+                        d
+                    } else {
+                        return Err("Error: Missing required option --diameter for circle figure.".into());
+                    }
+                }
+                FigureType::Square => {
+                    if let Some(s) = side {
+                        if diameter.is_some() {
+                            return Err("Error: Cannot specify --diameter for a square figure. Use --side instead.".into());
+                        }
+                        s
+                    } else {
+                        return Err("Error: Missing required option --side for square figure.".into());
+                    }
+                }
+                FigureType::Mask => {
+                    return Err("The 'mask' figure type requires an input image and is not supported in the bake subcommand.".into());
+                }
+            };
             bake_grid(figure, size, dpi, min_space, stroke_thickness, output, verbose)?;
         }
         Commands::Compose {
             figure,
             input,
+            diameter,
+            side,
             size,
             min_space,
             stroke_thickness,
@@ -137,10 +177,39 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 )
                 .into());
             }
+            let resolved_size = match figure {
+                FigureType::Circle => {
+                    if side.is_some() {
+                        return Err("Error: Cannot specify --side for a circle figure. Use --diameter instead.".into());
+                    }
+                    if size.is_some() {
+                        return Err("Error: Cannot specify --size for a circle figure. Use --diameter instead.".into());
+                    }
+                    diameter
+                }
+                FigureType::Square => {
+                    if diameter.is_some() {
+                        return Err("Error: Cannot specify --diameter for a square figure. Use --side instead.".into());
+                    }
+                    if size.is_some() {
+                        return Err("Error: Cannot specify --size for a square figure. Use --side instead.".into());
+                    }
+                    side
+                }
+                FigureType::Mask => {
+                    if diameter.is_some() {
+                        return Err("Error: Cannot specify --diameter for a mask figure. Use --size instead.".into());
+                    }
+                    if side.is_some() {
+                        return Err("Error: Cannot specify --side for a mask figure. Use --size instead.".into());
+                    }
+                    size
+                }
+            };
             compose_grid(
                 figure,
                 input,
-                size,
+                resolved_size,
                 dpi,
                 min_space,
                 stroke_thickness,

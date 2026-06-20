@@ -43,11 +43,12 @@ rusticker [GLOBAL_OPTIONS] <SUBCOMMAND>
 Generates blank shapes (square or circle outlines) in an A4 grid.
 
 ```bash
-rusticker bake [OPTIONS] --figure <FIGURE> --size <SIZE>
+rusticker bake [OPTIONS] --figure <FIGURE> [--diameter <DIAMETER> | --side <SIDE>]
 ```
 
 - `--figure <FIGURE>`: Type of figure to bake (`square` or `circle` - `mask` is not supported for baking).
-- `--size <SIZE>`: Size of the figure in pixels (side length for square, diameter for circle).
+- `--diameter <DIAMETER>`: Diameter of the circle in pixels (required for circle).
+- `--side <SIDE>`: Side length of the square in pixels (required for square).
 - `--min-space <MIN_SPACE>`: Minimum spacing in millimeters between adjacent figures [default: `2.0`].
 - `--stroke-thickness <STROKE_THICKNESS>`: Stroke thickness of the figure outline in millimeters (e.g. `2.25`) [default: `1.0`].
 - `-o, --output <OUTPUT>`: Output PDF file path [default: `baked.pdf`].
@@ -62,7 +63,9 @@ rusticker compose [OPTIONS] --figure <FIGURE> --input <INPUT>
 
 - `--figure <FIGURE>`: Type of figure (`square`, `circle`, or `mask`). The `mask` option dynamically detects background pixels (matching the color at `(0, 0)`) and traces a custom outline around the foreground sticker.
 - `--input <INPUT>`: Path to the input image file (PNG or JPEG).
-- `--size <SIZE>`: (Optional) Size of the figure in pixels. If not provided, no cropping is performed and the largest dimension of the input image is used as the base size.
+- `--diameter <DIAMETER>`: (Optional) Diameter of the circle in pixels.
+- `--side <SIDE>`: (Optional) Side length of the square in pixels.
+- `--size <SIZE>`: (Optional) Size of the mask figure in pixels. If not provided, no cropping is performed and the largest dimension of the input image is used as the base size.
 - `--min-space <MIN_SPACE>`: Minimum spacing in millimeters between adjacent figures [default: `2.0`].
 - `--stroke-thickness <STROKE_THICKNESS>`: Stroke thickness of the outline in millimeters [default: `1.0`].
 - `--algorithm <ALGORITHM>`: Algorithm to use for mask generation (`basic`, `advanced`, or `curves`). Only used when `--figure mask` is selected [default: `advanced`]:
@@ -103,12 +106,12 @@ The tool will abort with an error message detailing the complexity. For noisy im
 
 ### Bake a square grid outline
 ```bash
-cargo run -- bake --figure square --size 150 --stroke-thickness 1.5 -o grid_squares.pdf
+cargo run -- bake --figure square --side 150 --stroke-thickness 1.5 -o grid_squares.pdf
 ```
 
 ### Force overwrite an existing composed circle grid using an image
 ```bash
-cargo run -- --force compose --figure circle --input my_sticker.png --size 120 --stroke-thickness 2.0 -o output_composed.pdf
+cargo run -- --force compose --figure circle --input my_sticker.png --diameter 120 --stroke-thickness 2.0 -o output_composed.pdf
 ```
 
 ### Compose smooth vectorial curves around a mask foreground
