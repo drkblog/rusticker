@@ -303,6 +303,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8259ebd5ee48a37fd8931116405456fd67efbb5435b4789e45bdbccf5d7dea7e"
 
 [[package]]
+name = "background_remover"
+version = "1.1.2"
+dependencies = [
+ "clap",
+ "image",
+ "ndarray 0.15.6",
+ "tract-core",
+ "tract-hir",
+ "tract-onnx",
+ "ureq",
+]
+
+[[package]]
 name = "base64"
 version = "0.22.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1813,6 +1826,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "pdf_generator"
+version = "1.1.2"
+dependencies = [
+ "clap",
+ "image",
+ "mask_generator",
+ "printpdf",
+]
+
+[[package]]
 name = "percent-encoding"
 version = "2.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2430,15 +2453,9 @@ dependencies = [
 name = "rusticker"
 version = "1.1.2"
 dependencies = [
+ "background_remover",
  "clap",
- "image",
- "mask_generator",
- "ndarray 0.15.6",
- "printpdf",
- "tract-core",
- "tract-hir",
- "tract-onnx",
- "ureq",
+ "pdf_generator",
 ]
 
 [[package]]

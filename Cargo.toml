@@ -3,4 +3,6 @@ resolver = "3"
 members = [
     "main",
     "mask_generator",
+    "background_remover",
+    "pdf_generator",
 ]

@@ -4,9 +4,6 @@ use printpdf::*;
 use std::path::PathBuf;
 use mask_generator::{MaskAlgorithm, BasicTracer, AdvancedTracer, CurvesTracer};
 
-pub mod stickerize;
-pub use stickerize::remove_background;
-
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FigureType {
     Square,
@@ -16,20 +13,11 @@ pub enum FigureType {
 }
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ModelType {
-    U2netp,
-    Rmbg,
-    Birefnet,
-}
-
-#[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MaskAlgorithmType {
     Basic,
     Advanced,
     Curves,
 }
-
-
 
 pub fn bake_grid(
     figure: FigureType,
@@ -790,4 +778,3 @@ pub fn compose_grid(
 
     Ok(())
 }
-

@@ -1,5 +1,6 @@
 use clap::{Parser, Subcommand};
-use rusticker::{bake_grid, compose_grid, remove_background, FigureType, MaskAlgorithmType, ModelType};
+use background_remover::{remove_background, ModelType};
+use pdf_generator::{bake_grid, compose_grid, FigureType, MaskAlgorithmType};
 use std::path::PathBuf;
 
 /// Rusticker CLI application
