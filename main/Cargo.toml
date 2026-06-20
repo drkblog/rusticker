@@ -1,6 +1,6 @@
 [package]
 name = "rusticker"
-version = "1.1.1"
+version = "1.1.2"
 edition = "2024"
 
 [dependencies]
@@ -9,5 +9,7 @@ printpdf = { version = "0.9.1", features = ["images", "png", "jpeg"] }
 image = { version = "0.25.0", features = ["png", "jpeg", "webp"] }
 mask_generator = { path = "../mask_generator" }
 tract-onnx = "0.23.3"
+tract-core = "0.23.3"
+tract-hir = "0.23.3"
 ureq = { version = "2.10.1", features = ["tls"] }
 ndarray = "0.15"

@@ -90,9 +90,10 @@ rusticker stickerize [OPTIONS] --input <INPUT> --output <OUTPUT>
 
 - `--input <INPUT>`: Path to the input image file (PNG, JPEG, or WEBP).
 - `-o, --output <OUTPUT>`: Output transparent PNG file path.
-- `--model <MODEL>`: The neural network model to use for background removal (`u2netp` or `rmbg`) [default: `u2netp`].
+- `--model <MODEL>`: The neural network model to use for background removal (`u2netp`, `rmbg`, or `birefnet`) [default: `u2netp`].
   - `u2netp`: A lightweight, fast pre-trained model (~4.7 MB). If not locally cached, it downloads automatically from GitHub Releases to `~/.rusticker/models/u2netp.onnx`.
   - `rmbg`: Bria AI's high-quality background removal model (~176 MB). If not locally cached, it downloads automatically from Hugging Face to `~/.rusticker/models/rmbg.onnx`.
+  - `birefnet`: General-purpose BiRefNet model (~224 MB). If not locally cached, it downloads automatically from GitHub Releases to `~/.rusticker/models/birefnet.onnx`.
 
 ### Mask Generation Algorithms
 
@@ -156,4 +157,9 @@ cargo run --bin rusticker -- stickerize --input my_sticker.jpg -o my_sticker_tra
 ### Erase the background using the high-quality Bria RMBG-1.4 model
 ```bash
 cargo run --bin rusticker -- stickerize --model rmbg --input my_sticker.jpg -o my_sticker_transparent.png
+```
+
+### Erase the background using the BiRefNet model
+```bash
+cargo run --bin rusticker -- stickerize --model birefnet --input my_sticker.jpg -o my_sticker_transparent.png
 ```

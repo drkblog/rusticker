@@ -1464,7 +1464,7 @@ dependencies = [
 
 [[package]]
 name = "mask_generator"
-version = "1.1.1"
+version = "1.1.2"
 dependencies = [
  "image",
 ]
@@ -2428,13 +2428,15 @@ dependencies = [
 
 [[package]]
 name = "rusticker"
-version = "1.1.1"
+version = "1.1.2"
 dependencies = [
  "clap",
  "image",
  "mask_generator",
  "ndarray 0.15.6",
  "printpdf",
+ "tract-core",
+ "tract-hir",
  "tract-onnx",
  "ureq",
 ]

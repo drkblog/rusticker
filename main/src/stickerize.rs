@@ -1,9 +1,107 @@
 use std::path::{Path, PathBuf};
 use std::fs::File;
+use std::collections::HashMap;
 use image::{DynamicImage, GenericImageView, Rgba, RgbaImage};
 use tract_onnx::prelude::*;
 use tract_onnx::prelude::tract_ndarray::Array;
+use tract_core::ops::konst::Const;
+use tract_core::ops::array::GatherNd;
+use tract_core::internal::*;
+use tract_hir::infer::{InferenceOp, InferenceNode, ShapeFactoid, Factoid};
 use crate::ModelType;
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+pub struct MyGatherNd {
+    pub batch_dims: usize,
+}
+
+impl Op for MyGatherNd {
+    fn name(&self) -> StaticName {
+        "MyGatherNd".into()
+    }
+    
+    fn as_typed(&self) -> Option<&dyn TypedOp> {
+        None
+    }
+}
+
+impl EvalOp for MyGatherNd {
+    fn is_stateless(&self) -> bool {
+        true
+    }
+    
+    fn eval(&self, _inputs: TVec<TValue>) -> TractResult<TVec<TValue>> {
+        bail!("MyGatherNd is an inference op, should be typed before execution")
+    }
+}
+
+impl InferenceOp for MyGatherNd {
+    fn infer_facts(
+        &mut self,
+        inputs: TVec<&InferenceFact>,
+        outputs: TVec<&InferenceFact>,
+        observed: TVec<&InferenceFact>,
+    ) -> TractResult<(TVec<InferenceFact>, TVec<InferenceFact>, TVec<InferenceFact>)> {
+        let data = inputs[0];
+        let indices = inputs[1];
+        
+        let mut output = outputs[0].clone();
+        output.datum_type = data.datum_type;
+
+        if !data.shape.is_open() && !indices.shape.is_open() {
+            let data_dims = data.shape.dims().cloned().collect::<TVec<_>>();
+            let indices_dims = indices.shape.dims().cloned().collect::<TVec<_>>();
+            let q = indices_dims.len();
+            let r = data_dims.len();
+            let b = self.batch_dims;
+            
+            if q > 0 && r > b {
+                let k_fact = &indices_dims[q - 1];
+                if let Some(k_dim) = k_fact.concretize() {
+                    if let Ok(k) = k_dim.to_usize() {
+                        if r >= b + k {
+                            let mut dims = tvec![];
+                            for i in 0..(q - 1) {
+                                dims.push(indices_dims[i].clone());
+                            }
+                            for i in (b + k)..r {
+                                dims.push(data_dims[i].clone());
+                            }
+                            output.shape = ShapeFactoid::closed(dims);
+                        }
+                    }
+                }
+            }
+        }
+        
+        Ok((
+            tvec![data.clone(), indices.clone()],
+            tvec![output],
+            observed.into_iter().cloned().collect(),
+        ))
+    }
+
+    fn as_op(&self) -> &dyn Op {
+        self
+    }
+
+    fn as_op_mut(&mut self) -> &mut dyn Op {
+        self
+    }
+
+    fn to_typed(
+        &self,
+        _source: &InferenceModel,
+        node: &InferenceNode,
+        target: &mut TypedModel,
+        mapping: &HashMap<OutletId, OutletId>,
+    ) -> TractResult<TVec<OutletId>> {
+        let op = GatherNd::new(self.batch_dims);
+        let inputs = node.inputs.iter().map(|i| mapping[i]).collect::<TVec<_>>();
+        target.wire_node(&node.name, op, &inputs)
+    }
+}
+
 
 fn get_model_path(model_type: ModelType) -> Result<PathBuf, Box<dyn std::error::Error>> {
     let home = std::env::var("USERPROFILE")
@@ -16,6 +114,7 @@ fn get_model_path(model_type: ModelType) -> Result<PathBuf, Box<dyn std::error::
     let filename = match model_type {
         ModelType::U2netp => "u2netp.onnx",
         ModelType::Rmbg => "rmbg.onnx",
+        ModelType::Birefnet => "birefnet.onnx",
     };
     path.push(filename);
     Ok(path)
@@ -32,6 +131,11 @@ fn download_model(model_type: ModelType, dest: &Path, verbose: bool) -> Result<(
             "https://huggingface.co/briaai/RMBG-1.4/resolve/main/onnx/model.onnx",
             "RMBG-1.4",
             "~176 MB"
+        ),
+        ModelType::Birefnet => (
+            "https://github.com/danielgatis/rembg/releases/download/v0.0.0/BiRefNet-general-bb_swin_v1_tiny-epoch_232.onnx",
+            "BiRefNet",
+            "~224 MB"
         ),
     };
 
@@ -67,8 +171,8 @@ fn prepare_input_tensor(
     let mut flat_data = vec![0.0f32; 1 * 3 * model_h as usize * model_w as usize];
 
     match model_type {
-        ModelType::U2netp => {
-            // Standard U2-Net normalization: (val - mean) / std
+        ModelType::U2netp | ModelType::Birefnet => {
+            // Standard U2-Net / ImageNet normalization: (val - mean) / std
             let mean = [0.485, 0.456, 0.406];
             let std = [0.229, 0.224, 0.225];
 
@@ -144,7 +248,7 @@ pub fn remove_background(
     // 3. Set input dimensions based on model type
     let (model_w, model_h) = match model_type {
         ModelType::U2netp => (320, 320),
-        ModelType::Rmbg => (1024, 1024),
+        ModelType::Rmbg | ModelType::Birefnet => (1024, 1024),
     };
     if verbose {
         println!(
@@ -157,14 +261,72 @@ pub fn remove_background(
     if verbose {
         println!("[VERBOSE] Step: Loading ONNX model into tract and setting input fact...");
     }
-    let model = tract_onnx::onnx()
-        .model_for_path(&resolved_model_path)?
-        .with_input_fact(
-            0,
-            InferenceFact::dt_shape(f32::datum_type(), tvec!(1, 3, model_h as usize, model_w as usize))
-        )?
-        .into_optimized()?
-        .into_runnable()?;
+    let model = if model_type == ModelType::Birefnet {
+        let mut raw_model = tract_onnx::onnx().model_for_path(&resolved_model_path)?;
+        
+        if verbose {
+            println!("[VERBOSE] Patching BiRefNet graph...");
+        }
+        
+        let mut replaced_gather_count = 0;
+        for node in &mut raw_model.nodes {
+            if let Some(gather_nd_op) = node.op_as::<GatherNd>() {
+                let batch_dims = gather_nd_op.batch_dims;
+                let new_op = MyGatherNd { batch_dims };
+                node.op = Box::new(new_op);
+                replaced_gather_count += 1;
+            }
+        }
+        if verbose {
+            println!("[VERBOSE] Replaced {} GatherNd nodes.", replaced_gather_count);
+        }
+
+        let mut const_node_indices = std::collections::HashSet::new();
+        for node in &raw_model.nodes {
+            if node.name.contains("atrous_conv/Clip") {
+                const_node_indices.insert(node.inputs[1].node);
+                const_node_indices.insert(node.inputs[2].node);
+            }
+        }
+        
+        let mut patched_count = 0;
+        for idx in const_node_indices {
+            let node = &mut raw_model.nodes[idx];
+            if let Some(const_op) = node.op_as::<Const>() {
+                let tensor = const_op.val();
+                
+                if tensor.datum_type() == DatumType::I64 {
+                    let ints = unsafe { tensor.as_slice_unchecked::<i64>() };
+                    let val = ints[0];
+                    let tdim_tensor = tensor0(TDim::from(val));
+
+                    let new_op = Const::new(std::sync::Arc::new(tdim_tensor))?;
+                    node.op = Box::new(new_op);
+                    patched_count += 1;
+                }
+            }
+        }
+        if verbose {
+            println!("[VERBOSE] Patched {} constant ops to TDim.", patched_count);
+        }
+
+        raw_model
+            .with_input_fact(
+                0,
+                InferenceFact::dt_shape(f32::datum_type(), tvec!(1, 3, model_h as usize, model_w as usize))
+            )?
+            .into_optimized()?
+            .into_runnable()?
+    } else {
+        tract_onnx::onnx()
+            .model_for_path(&resolved_model_path)?
+            .with_input_fact(
+                0,
+                InferenceFact::dt_shape(f32::datum_type(), tvec!(1, 3, model_h as usize, model_w as usize))
+            )?
+            .into_optimized()?
+            .into_runnable()?
+    };
 
     // 5. Preprocess image and perform inference
     if verbose {
