@@ -4,6 +4,9 @@ use printpdf::*;
 use std::path::PathBuf;
 use mask_generator::{MaskAlgorithm, BasicTracer, AdvancedTracer, CurvesTracer};
 
+pub mod stickerize;
+pub use stickerize::remove_background;
+
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FigureType {
     Square,

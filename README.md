@@ -10,6 +10,7 @@
 - **Adjustable Parameters**:
   - Customize DPI resolution (100, 200, 300, 600).
   - Customize figure size, stroke outline thickness, and minimum spacing in millimeters.
+- **Background Removal (`stickerize`)**: Erase image background using an AI model (U2-Netp by default) to create transparent PNG stickers.
 - **Safety Safeguard**: Prevents accidental overwriting of output files with a global `--force` flag.
 
 ## Building and Running
@@ -79,6 +80,18 @@ rusticker compose [OPTIONS] --figure <FIGURE> --input <INPUT>
 - `--rdp-level <RDP_LEVEL>`: Aggressiveness of RDP segment reduction. Accepts a value from `1` (least reduction, more segments) to `5` (most reduction, fewest segments) [default: `3`].
 - `-o, --output <OUTPUT>`: Output PDF file path [default: `composed.pdf`].
 
+#### `stickerize`
+
+Erases the background of an input image (PNG, JPEG, or WEBP) using a neural network model, saving the transparent output as a PNG.
+
+```bash
+rusticker stickerize [OPTIONS] --input <INPUT> --output <OUTPUT>
+```
+
+- `--input <INPUT>`: Path to the input image file (PNG, JPEG, or WEBP).
+- `-o, --output <OUTPUT>`: Output transparent PNG file path.
+- `--model <MODEL>`: Path to a custom ONNX model file (optional). If not specified, the tool automatically downloads and uses a pre-trained U2-Netp model (~4.7 MB) from GitHub Releases and caches it in `~/.rusticker/models/u2netp.onnx`.
+
 ### Mask Generation Algorithms
 
 When using `--figure mask`, the tool automatically detects background pixels (matching the color at `(0, 0)`) and traces a custom outline around the foreground sticker. You can choose from three different algorithms to trace the outline:
@@ -131,4 +144,9 @@ cargo run -- compose --figure rectangle --input my_sticker.png --width 150 --hei
 ### Compose smooth vectorial curves around a mask foreground
 ```bash
 cargo run -- compose --figure mask --algorithm curves --rdp-level 4 --input my_sticker.png -o smooth_curves.pdf
+```
+
+### Erase the background of an image to create a transparent sticker
+```bash
+cargo run --bin rusticker -- stickerize --input my_sticker.jpg -o my_sticker_transparent.png
 ```

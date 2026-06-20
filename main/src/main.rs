@@ -1,5 +1,5 @@
 use clap::{Parser, Subcommand};
-use rusticker::{bake_grid, compose_grid, FigureType, MaskAlgorithmType};
+use rusticker::{bake_grid, compose_grid, remove_background, FigureType, MaskAlgorithmType};
 use std::path::PathBuf;
 
 /// Rusticker CLI application
@@ -117,6 +117,20 @@ enum Commands {
         /// Optimization level for RDP simplification (1 = low, 5 = high)
         #[arg(long, default_value_t = 3, value_parser = clap::value_parser!(u8).range(1..=5))]
         rdp_level: u8,
+    },
+    /// Erase the background of an image and save it as a transparent PNG
+    Stickerize {
+        /// Path to the input image file (PNG, JPEG, or WEBP)
+        #[arg(long)]
+        input: PathBuf,
+
+        /// Output transparent PNG file path
+        #[arg(short, long)]
+        output: PathBuf,
+
+        /// Path to a custom ONNX model file (optional)
+        #[arg(long)]
+        model: Option<PathBuf>,
     },
 }
 
@@ -249,6 +263,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 algorithm,
                 rdp_level,
             )?;
+        }
+        Commands::Stickerize {
+            input,
+            output,
+            model,
+        } => {
+            remove_background(input, output, model, force, verbose)?;
         }
     }
 
