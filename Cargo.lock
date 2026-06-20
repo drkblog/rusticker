@@ -1134,7 +1134,7 @@ dependencies = [
 
 [[package]]
 name = "mask_generator"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "image",
 ]
@@ -1852,7 +1852,7 @@ dependencies = [
 
 [[package]]
 name = "rusticker"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "clap",
  "image",
