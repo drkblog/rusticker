@@ -48,6 +48,14 @@ enum Commands {
         #[arg(long)]
         side: Option<u32>,
 
+        /// Width of the rectangle in pixels (required for rectangle)
+        #[arg(long)]
+        width: Option<u32>,
+
+        /// Height of the rectangle in pixels (required for rectangle)
+        #[arg(long)]
+        height: Option<u32>,
+
         /// Minimum space in millimeters between a figure and the others surrounding it
         #[arg(long, default_value_t = 2.0)]
         min_space: f64,
@@ -77,6 +85,14 @@ enum Commands {
         /// Side length of the square in pixels (optional for square)
         #[arg(long)]
         side: Option<u32>,
+
+        /// Width of the rectangle in pixels (optional for rectangle)
+        #[arg(long)]
+        width: Option<u32>,
+
+        /// Height of the rectangle in pixels (optional for rectangle)
+        #[arg(long)]
+        height: Option<u32>,
 
         /// Size of the mask figure in pixels
         #[arg(long)]
@@ -120,6 +136,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             figure,
             diameter,
             side,
+            width,
+            height,
             min_space,
             stroke_thickness,
             output,
@@ -131,38 +149,49 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 )
                 .into());
             }
-            let size = match figure {
+            let (w, h) = match figure {
                 FigureType::Circle => {
+                    if side.is_some() || width.is_some() || height.is_some() {
+                        return Err("Error: Cannot specify --side, --width, or --height for a circle figure. Use --diameter instead.".into());
+                    }
                     if let Some(d) = diameter {
-                        if side.is_some() {
-                            return Err("Error: Cannot specify --side for a circle figure. Use --diameter instead.".into());
-                        }
-                        d
+                        (d, d)
                     } else {
                         return Err("Error: Missing required option --diameter for circle figure.".into());
                     }
                 }
                 FigureType::Square => {
+                    if diameter.is_some() || width.is_some() || height.is_some() {
+                        return Err("Error: Cannot specify --diameter, --width, or --height for a square figure. Use --side instead.".into());
+                    }
                     if let Some(s) = side {
-                        if diameter.is_some() {
-                            return Err("Error: Cannot specify --diameter for a square figure. Use --side instead.".into());
-                        }
-                        s
+                        (s, s)
                     } else {
                         return Err("Error: Missing required option --side for square figure.".into());
+                    }
+                }
+                FigureType::Rectangle => {
+                    if diameter.is_some() || side.is_some() {
+                        return Err("Error: Cannot specify --diameter or --side for a rectangle figure. Use --width and --height instead.".into());
+                    }
+                    match (width, height) {
+                        (Some(w), Some(h)) => (w, h),
+                        _ => return Err("Error: Missing required options --width and --height for rectangle figure.".into()),
                     }
                 }
                 FigureType::Mask => {
                     return Err("The 'mask' figure type requires an input image and is not supported in the bake subcommand.".into());
                 }
             };
-            bake_grid(figure, size, dpi, min_space, stroke_thickness, output, verbose)?;
+            bake_grid(figure, w, h, dpi, min_space, stroke_thickness, output, verbose)?;
         }
         Commands::Compose {
             figure,
             input,
             diameter,
             side,
+            width,
+            height,
             size,
             min_space,
             stroke_thickness,
@@ -177,39 +206,41 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 )
                 .into());
             }
-            let resolved_size = match figure {
+            let (resolved_w, resolved_h) = match figure {
                 FigureType::Circle => {
-                    if side.is_some() {
-                        return Err("Error: Cannot specify --side for a circle figure. Use --diameter instead.".into());
+                    if side.is_some() || width.is_some() || height.is_some() || size.is_some() {
+                        return Err("Error: Cannot specify --side, --width, --height, or --size for a circle figure. Use --diameter instead.".into());
                     }
-                    if size.is_some() {
-                        return Err("Error: Cannot specify --size for a circle figure. Use --diameter instead.".into());
-                    }
-                    diameter
+                    (diameter, diameter)
                 }
                 FigureType::Square => {
-                    if diameter.is_some() {
-                        return Err("Error: Cannot specify --diameter for a square figure. Use --side instead.".into());
+                    if diameter.is_some() || width.is_some() || height.is_some() || size.is_some() {
+                        return Err("Error: Cannot specify --diameter, --width, --height, or --size for a square figure. Use --side instead.".into());
                     }
-                    if size.is_some() {
-                        return Err("Error: Cannot specify --size for a square figure. Use --side instead.".into());
+                    (side, side)
+                }
+                FigureType::Rectangle => {
+                    if diameter.is_some() || side.is_some() || size.is_some() {
+                        return Err("Error: Cannot specify --diameter, --side, or --size for a rectangle figure. Use --width and --height instead.".into());
                     }
-                    side
+                    match (width, height) {
+                        (None, None) => (None, None),
+                        (Some(w), Some(h)) => (Some(w), Some(h)),
+                        _ => return Err("Error: For a rectangle figure, either specify both --width and --height, or specify neither.".into()),
+                    }
                 }
                 FigureType::Mask => {
-                    if diameter.is_some() {
-                        return Err("Error: Cannot specify --diameter for a mask figure. Use --size instead.".into());
+                    if diameter.is_some() || side.is_some() || width.is_some() || height.is_some() {
+                        return Err("Error: Cannot specify --diameter, --side, --width, or --height for a mask figure. Use --size instead.".into());
                     }
-                    if side.is_some() {
-                        return Err("Error: Cannot specify --side for a mask figure. Use --size instead.".into());
-                    }
-                    size
+                    (size, size)
                 }
             };
             compose_grid(
                 figure,
                 input,
-                resolved_size,
+                resolved_w,
+                resolved_h,
                 dpi,
                 min_space,
                 stroke_thickness,

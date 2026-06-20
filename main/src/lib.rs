@@ -8,6 +8,7 @@ use mask_generator::{MaskAlgorithm, BasicTracer, AdvancedTracer, CurvesTracer};
 pub enum FigureType {
     Square,
     Circle,
+    Rectangle,
     Mask,
 }
 
@@ -22,7 +23,8 @@ pub enum MaskAlgorithmType {
 
 pub fn bake_grid(
     figure: FigureType,
-    size_px: u32,
+    width_px: u32,
+    height_px: u32,
     dpi: u32,
     min_space_mm: f64,
     stroke_thickness_mm: f64,
@@ -44,7 +46,8 @@ pub fn bake_grid(
     let page_height_pt = (page_height_mm as f64) / 25.4 * 72.0;
 
     // Convert figure size from pixels to PDF points
-    let size_pt = (size_px as f64) / (dpi as f64) * 72.0;
+    let width_pt = (width_px as f64) / (dpi as f64) * 72.0;
+    let height_pt = (height_px as f64) / (dpi as f64) * 72.0;
 
     // Set layout parameters: 10mm margins, min_space_mm gap between figures
     let margin_mm = 10.0f64;
@@ -54,24 +57,24 @@ pub fn bake_grid(
     let gap_pt = gap_mm / 25.4 * 72.0;
 
     if verbose {
-        println!("[VERBOSE] Grid details: Page size: {:.2}x{:.2} pt | Margins: {:.2} pt | Spacing (gap): {:.2} pt | Figure size: {:.2} pt",
-                 page_width_pt, page_height_pt, margin_pt, gap_pt, size_pt);
+        println!("[VERBOSE] Grid details: Page size: {:.2}x{:.2} pt | Margins: {:.2} pt | Spacing (gap): {:.2} pt | Figure dimensions: {:.2}x{:.2} pt",
+                 page_width_pt, page_height_pt, margin_pt, gap_pt, width_pt, height_pt);
     }
 
     let available_width = page_width_pt - 2.0 * margin_pt;
     let available_height = page_height_pt - 2.0 * margin_pt;
 
-    if size_pt > available_width || size_pt > available_height {
+    if width_pt > available_width || height_pt > available_height {
         eprintln!(
-            "Error: Figure size of {} pixels ({:.2} pt) at {} DPI is larger than available page area (width: {:.2} pt, height: {:.2} pt).",
-            size_px, size_pt, dpi, available_width, available_height
+            "Error: Figure size of {}x{} pixels ({:.2}x{:.2} pt) at {} DPI is larger than available page area (width: {:.2} pt, height: {:.2} pt).",
+            width_px, height_px, width_pt, height_pt, dpi, available_width, available_height
         );
         return Err("Figure size exceeds available page space.".into());
     }
 
     // Number of columns and rows
-    let cols = ((available_width + gap_pt) / (size_pt + gap_pt)).floor() as usize;
-    let rows = ((available_height + gap_pt) / (size_pt + gap_pt)).floor() as usize;
+    let cols = ((available_width + gap_pt) / (width_pt + gap_pt)).floor() as usize;
+    let rows = ((available_height + gap_pt) / (height_pt + gap_pt)).floor() as usize;
 
     if cols == 0 || rows == 0 {
         return Err(
@@ -84,12 +87,14 @@ pub fn bake_grid(
     }
 
     println!(
-        "Baking grid of {}x{} = {} figures (size: {} px / {:.2} pt, DPI: {}) to {:?}",
+        "Baking grid of {}x{} = {} figures (size: {}x{} px / {:.2}x{:.2} pt, DPI: {}) to {:?}",
         cols,
         rows,
         cols * rows,
-        size_px,
-        size_pt,
+        width_px,
+        height_px,
+        width_pt,
+        height_pt,
         dpi,
         output_path
     );
@@ -135,11 +140,11 @@ pub fn bake_grid(
     for r in 0..rows {
         for c in 0..cols {
             // Calculate coordinates for top-left aligned placement of bounding box
-            let x = margin_pt + (c as f64) * (size_pt + gap_pt);
-            let y = page_height_pt - margin_pt - size_pt - (r as f64) * (size_pt + gap_pt);
+            let x = margin_pt + (c as f64) * (width_pt + gap_pt);
+            let y = page_height_pt - margin_pt - height_pt - (r as f64) * (height_pt + gap_pt);
 
             match figure {
-                FigureType::Square => {
+                FigureType::Square | FigureType::Rectangle => {
                     let points = vec![
                         LinePoint {
                             p: Point {
@@ -150,22 +155,22 @@ pub fn bake_grid(
                         },
                         LinePoint {
                             p: Point {
-                                x: Pt((x + size_pt) as f32),
+                                x: Pt((x + width_pt) as f32),
                                 y: Pt(y as f32),
                             },
                             bezier: false,
                         },
                         LinePoint {
                             p: Point {
-                                x: Pt((x + size_pt) as f32),
-                                y: Pt((y + size_pt) as f32),
+                                x: Pt((x + width_pt) as f32),
+                                y: Pt((y + height_pt) as f32),
                             },
                             bezier: false,
                         },
                         LinePoint {
                             p: Point {
                                 x: Pt(x as f32),
-                                y: Pt((y + size_pt) as f32),
+                                y: Pt((y + height_pt) as f32),
                             },
                             bezier: false,
                         },
@@ -177,9 +182,9 @@ pub fn bake_grid(
                     ops.push(Op::DrawLine { line });
                 }
                 FigureType::Circle => {
-                    let cx = x + size_pt / 2.0;
-                    let cy = y + size_pt / 2.0;
-                    let radius = size_pt / 2.0;
+                    let cx = x + width_pt / 2.0;
+                    let cy = y + height_pt / 2.0;
+                    let radius = width_pt / 2.0;
                     let k = 0.55228474983; // Cubic Bézier circle approximation constant
 
                     let points = vec![
@@ -318,7 +323,8 @@ pub fn bake_grid(
 pub fn compose_grid(
     figure: FigureType,
     input_path: PathBuf,
-    size_px: Option<u32>,
+    width_px: Option<u32>,
+    height_px: Option<u32>,
     dpi: u32,
     min_space_mm: f64,
     stroke_thickness_mm: f64,
@@ -341,26 +347,28 @@ pub fn compose_grid(
         println!("[VERBOSE] Original image dimensions: {}x{} px", width, height);
     }
 
-    let (cropped, actual_size_px) = if let Some(s) = size_px {
-        if width < s || height < s {
+    let (cropped, actual_width_px, actual_height_px) = if width_px.is_some() || height_px.is_some() {
+        let w = width_px.unwrap_or(width);
+        let h = height_px.unwrap_or(height);
+        if width < w || height < h {
             return Err("Input image is smaller than the specified size".into());
         }
         if verbose {
-            println!("[VERBOSE] Step: Cropping image to {}x{} px...", s, s);
+            println!("[VERBOSE] Step: Cropping image to {}x{} px...", w, h);
         }
-        let cropped_img = if width == s && height == s {
+        let cropped_img = if width == w && height == h {
             img
         } else {
-            let x = (width - s) / 2;
-            let y = (height - s) / 2;
-            img.crop_imm(x, y, s, s)
+            let x = (width - w) / 2;
+            let y = (height - h) / 2;
+            img.crop_imm(x, y, w, h)
         };
-        (cropped_img, s)
+        (cropped_img, w, h)
     } else {
         if verbose {
             println!("[VERBOSE] Step: No cropping requested. Using original dimensions.");
         }
-        (img, std::cmp::max(width, height))
+        (img, width, height)
     };
 
     let (cropped_width, cropped_height) = cropped.dimensions();
@@ -416,8 +424,10 @@ pub fn compose_grid(
             (cropped_height as f64) / (dpi as f64) * 72.0,
         )
     } else {
-        let size_pt = (actual_size_px as f64) / (dpi as f64) * 72.0;
-        (size_pt, size_pt)
+        (
+            (actual_width_px as f64) / (dpi as f64) * 72.0,
+            (actual_height_px as f64) / (dpi as f64) * 72.0,
+        )
     };
 
     // Set layout parameters: 10mm margins, min_space_mm gap between figures
@@ -472,12 +482,14 @@ pub fn compose_grid(
         );
     } else {
         println!(
-            "Composing grid of {}x{} = {} figures (size: {} px / {:.2} pt, DPI: {}) to {:?}",
+            "Composing grid of {}x{} = {} figures (size: {}x{} px / {:.2}x{:.2} pt, DPI: {}) to {:?}",
             cols,
             rows,
             cols * rows,
-            actual_size_px,
+            actual_width_px,
+            actual_height_px,
             width_pt,
+            height_pt,
             dpi,
             output_path
         );
@@ -540,7 +552,7 @@ pub fn compose_grid(
             let y = page_height_pt - margin_pt - height_pt - (r as f64) * (height_pt + gap_pt);
 
             match figure {
-                FigureType::Square => {
+                FigureType::Square | FigureType::Rectangle => {
                     let points = vec![
                         LinePoint {
                             p: Point {

@@ -40,15 +40,17 @@ rusticker [GLOBAL_OPTIONS] <SUBCOMMAND>
 
 #### `bake`
 
-Generates blank shapes (square or circle outlines) in an A4 grid.
+Generates blank shapes (square, circle, or rectangle outlines) in an A4 grid.
 
 ```bash
-rusticker bake [OPTIONS] --figure <FIGURE> [--diameter <DIAMETER> | --side <SIDE>]
+rusticker bake [OPTIONS] --figure <FIGURE> [--diameter <DIAMETER> | --side <SIDE> | --width <WIDTH> --height <HEIGHT>]
 ```
 
-- `--figure <FIGURE>`: Type of figure to bake (`square` or `circle` - `mask` is not supported for baking).
+- `--figure <FIGURE>`: Type of figure to bake (`square`, `circle`, or `rectangle` - `mask` is not supported for baking).
 - `--diameter <DIAMETER>`: Diameter of the circle in pixels (required for circle).
 - `--side <SIDE>`: Side length of the square in pixels (required for square).
+- `--width <WIDTH>`: Width of the rectangle in pixels (required for rectangle).
+- `--height <HEIGHT>`: Height of the rectangle in pixels (required for rectangle).
 - `--min-space <MIN_SPACE>`: Minimum spacing in millimeters between adjacent figures [default: `2.0`].
 - `--stroke-thickness <STROKE_THICKNESS>`: Stroke thickness of the figure outline in millimeters (e.g. `2.25`) [default: `1.0`].
 - `-o, --output <OUTPUT>`: Output PDF file path [default: `baked.pdf`].
@@ -61,10 +63,12 @@ Generates grid shapes populated with a center-cropped repeat of an input image.
 rusticker compose [OPTIONS] --figure <FIGURE> --input <INPUT>
 ```
 
-- `--figure <FIGURE>`: Type of figure (`square`, `circle`, or `mask`). The `mask` option dynamically detects background pixels (matching the color at `(0, 0)`) and traces a custom outline around the foreground sticker.
+- `--figure <FIGURE>`: Type of figure (`square`, `circle`, `rectangle`, or `mask`). The `mask` option dynamically detects background pixels (matching the color at `(0, 0)`) and traces a custom outline around the foreground sticker.
 - `--input <INPUT>`: Path to the input image file (PNG or JPEG).
 - `--diameter <DIAMETER>`: (Optional) Diameter of the circle in pixels.
 - `--side <SIDE>`: (Optional) Side length of the square in pixels.
+- `--width <WIDTH>`: (Optional) Width of the rectangle in pixels.
+- `--height <HEIGHT>`: (Optional) Height of the rectangle in pixels.
 - `--size <SIZE>`: (Optional) Size of the mask figure in pixels. If not provided, no cropping is performed and the largest dimension of the input image is used as the base size.
 - `--min-space <MIN_SPACE>`: Minimum spacing in millimeters between adjacent figures [default: `2.0`].
 - `--stroke-thickness <STROKE_THICKNESS>`: Stroke thickness of the outline in millimeters [default: `1.0`].
@@ -109,9 +113,19 @@ The tool will abort with an error message detailing the complexity. For noisy im
 cargo run -- bake --figure square --side 150 --stroke-thickness 1.5 -o grid_squares.pdf
 ```
 
+### Bake a rectangle grid outline
+```bash
+cargo run -- bake --figure rectangle --width 150 --height 100 --stroke-thickness 1.5 -o grid_rects.pdf
+```
+
 ### Force overwrite an existing composed circle grid using an image
 ```bash
 cargo run -- --force compose --figure circle --input my_sticker.png --diameter 120 --stroke-thickness 2.0 -o output_composed.pdf
+```
+
+### Compose a composed rectangle grid using an image
+```bash
+cargo run -- compose --figure rectangle --input my_sticker.png --width 150 --height 100 --stroke-thickness 1.5 -o grid_rects_composed.pdf
 ```
 
 ### Compose smooth vectorial curves around a mask foreground
