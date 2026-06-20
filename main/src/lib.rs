@@ -16,6 +16,12 @@ pub enum FigureType {
 }
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ModelType {
+    U2netp,
+    Rmbg,
+}
+
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MaskAlgorithmType {
     Basic,
     Advanced,

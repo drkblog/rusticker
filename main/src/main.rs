@@ -1,5 +1,5 @@
 use clap::{Parser, Subcommand};
-use rusticker::{bake_grid, compose_grid, remove_background, FigureType, MaskAlgorithmType};
+use rusticker::{bake_grid, compose_grid, remove_background, FigureType, MaskAlgorithmType, ModelType};
 use std::path::PathBuf;
 
 /// Rusticker CLI application
@@ -128,9 +128,9 @@ enum Commands {
         #[arg(short, long)]
         output: PathBuf,
 
-        /// Path to a custom ONNX model file (optional)
-        #[arg(long)]
-        model: Option<PathBuf>,
+        /// Model to use for background removal (u2netp or rmbg)
+        #[arg(long, value_enum, default_value = "u2netp")]
+        model: ModelType,
     },
 }
 

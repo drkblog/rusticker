@@ -3,8 +3,9 @@ use std::fs::File;
 use image::{DynamicImage, GenericImageView, Rgba, RgbaImage};
 use tract_onnx::prelude::*;
 use tract_onnx::prelude::tract_ndarray::Array;
+use crate::ModelType;
 
-fn get_default_model_path() -> Result<PathBuf, Box<dyn std::error::Error>> {
+fn get_model_path(model_type: ModelType) -> Result<PathBuf, Box<dyn std::error::Error>> {
     let home = std::env::var("USERPROFILE")
         .or_else(|_| std::env::var("HOME"))
         .map_err(|_| "Could not find home directory environment variable (USERPROFILE or HOME).")?;
@@ -12,16 +13,32 @@ fn get_default_model_path() -> Result<PathBuf, Box<dyn std::error::Error>> {
     path.push(".rusticker");
     path.push("models");
     std::fs::create_dir_all(&path)?;
-    path.push("u2netp.onnx");
+    let filename = match model_type {
+        ModelType::U2netp => "u2netp.onnx",
+        ModelType::Rmbg => "rmbg.onnx",
+    };
+    path.push(filename);
     Ok(path)
 }
 
-fn download_default_model(dest: &Path, verbose: bool) -> Result<(), Box<dyn std::error::Error>> {
-    let url = "https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2netp.onnx";
+fn download_model(model_type: ModelType, dest: &Path, verbose: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let (url, name, size_str) = match model_type {
+        ModelType::U2netp => (
+            "https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2netp.onnx",
+            "U2Netp",
+            "~4.7 MB"
+        ),
+        ModelType::Rmbg => (
+            "https://huggingface.co/briaai/RMBG-1.4/resolve/main/onnx/model.onnx",
+            "RMBG-1.4",
+            "~176 MB"
+        ),
+    };
+
     if verbose {
-        println!("[VERBOSE] Downloading default ONNX model from {} to {:?}", url, dest);
+        println!("[VERBOSE] Downloading {} ONNX model from {} to {:?}", name, url, dest);
     } else {
-        println!("Downloading default U2Netp ONNX model (~4.7 MB)...");
+        println!("Downloading {} ONNX model ({})... This may take a moment...", name, size_str);
     }
 
     let response = ureq::get(url).call()?;
@@ -37,23 +54,46 @@ fn download_default_model(dest: &Path, verbose: bool) -> Result<(), Box<dyn std:
     Ok(())
 }
 
-fn prepare_input_tensor(img: &DynamicImage, model_w: u32, model_h: u32) -> Result<Tensor, Box<dyn std::error::Error>> {
+fn prepare_input_tensor(
+    img: &DynamicImage,
+    model_w: u32,
+    model_h: u32,
+    model_type: ModelType,
+) -> Result<Tensor, Box<dyn std::error::Error>> {
     let resized = img.resize_exact(model_w, model_h, image::imageops::FilterType::Triangle);
     let rgb = resized.to_rgb8();
     let raw = rgb.as_raw();
 
-    // Standard U2-Net normalization: (val - mean) / std
-    let mean = [0.485, 0.456, 0.406];
-    let std = [0.229, 0.224, 0.225];
-
     let mut flat_data = vec![0.0f32; 1 * 3 * model_h as usize * model_w as usize];
-    for y in 0..model_h as usize {
-        for x in 0..model_w as usize {
-            for c in 0..3 {
-                let pixel_val = raw[(y * model_w as usize + x) * 3 + c] as f32 / 255.0;
-                let normalized = (pixel_val - mean[c]) / std[c];
-                let index = c * (model_h as usize * model_w as usize) + y * model_w as usize + x;
-                flat_data[index] = normalized;
+
+    match model_type {
+        ModelType::U2netp => {
+            // Standard U2-Net normalization: (val - mean) / std
+            let mean = [0.485, 0.456, 0.406];
+            let std = [0.229, 0.224, 0.225];
+
+            for y in 0..model_h as usize {
+                for x in 0..model_w as usize {
+                    for c in 0..3 {
+                        let pixel_val = raw[(y * model_w as usize + x) * 3 + c] as f32 / 255.0;
+                        let normalized = (pixel_val - mean[c]) / std[c];
+                        let index = c * (model_h as usize * model_w as usize) + y * model_w as usize + x;
+                        flat_data[index] = normalized;
+                    }
+                }
+            }
+        }
+        ModelType::Rmbg => {
+            // RMBG-1.4 normalization: val / 255.0 - 0.5
+            for y in 0..model_h as usize {
+                for x in 0..model_w as usize {
+                    for c in 0..3 {
+                        let pixel_val = raw[(y * model_w as usize + x) * 3 + c] as f32 / 255.0;
+                        let normalized = pixel_val - 0.5;
+                        let index = c * (model_h as usize * model_w as usize) + y * model_w as usize + x;
+                        flat_data[index] = normalized;
+                    }
+                }
             }
         }
     }
@@ -68,7 +108,7 @@ fn prepare_input_tensor(img: &DynamicImage, model_w: u32, model_h: u32) -> Resul
 pub fn remove_background(
     input_path: PathBuf,
     output_path: PathBuf,
-    model_path: Option<PathBuf>,
+    model_type: ModelType,
     force: bool,
     verbose: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -94,44 +134,18 @@ pub fn remove_background(
     }
 
     // 2. Determine and resolve ONNX model path
-    let resolved_model_path = match model_path {
-        Some(p) => {
-            if verbose {
-                println!("[VERBOSE] Using custom model path: {:?}", p);
-            }
-            p
-        }
-        None => {
-            let default_path = get_default_model_path()?;
-            if !default_path.exists() {
-                download_default_model(&default_path, verbose)?;
-            } else if verbose {
-                println!("[VERBOSE] Using cached default model at {:?}", default_path);
-            }
-            default_path
-        }
+    let resolved_model_path = get_model_path(model_type)?;
+    if !resolved_model_path.exists() {
+        download_model(model_type, &resolved_model_path, verbose)?;
+    } else if verbose {
+        println!("[VERBOSE] Using cached model at {:?}", resolved_model_path);
+    }
+
+    // 3. Set input dimensions based on model type
+    let (model_w, model_h) = match model_type {
+        ModelType::U2netp => (320, 320),
+        ModelType::Rmbg => (1024, 1024),
     };
-
-    // 3. Load ONNX model using tract-onnx
-    if verbose {
-        println!("[VERBOSE] Step: Loading ONNX model into tract...");
-    }
-    let model = tract_onnx::onnx()
-        .model_for_path(&resolved_model_path)?
-        .into_optimized()?
-        .into_runnable()?;
-
-    // 4. Retrieve input shape dynamically if possible
-    let mut model_w = 320;
-    let mut model_h = 320;
-    if let Some(fact) = model.model().input_fact(0).ok() {
-        if let Some(concrete) = fact.shape.as_concrete() {
-            if concrete.len() == 4 {
-                model_h = concrete[2] as u32;
-                model_w = concrete[3] as u32;
-            }
-        }
-    }
     if verbose {
         println!(
             "[VERBOSE] Model expected input dimensions: {}x{} px",
@@ -139,11 +153,24 @@ pub fn remove_background(
         );
     }
 
+    // 4. Load and optimize ONNX model using tract-onnx
+    if verbose {
+        println!("[VERBOSE] Step: Loading ONNX model into tract and setting input fact...");
+    }
+    let model = tract_onnx::onnx()
+        .model_for_path(&resolved_model_path)?
+        .with_input_fact(
+            0,
+            InferenceFact::dt_shape(f32::datum_type(), tvec!(1, 3, model_h as usize, model_w as usize))
+        )?
+        .into_optimized()?
+        .into_runnable()?;
+
     // 5. Preprocess image and perform inference
     if verbose {
         println!("[VERBOSE] Step: Preprocessing image for inference...");
     }
-    let input_tensor = prepare_input_tensor(&img, model_w, model_h)?;
+    let input_tensor = prepare_input_tensor(&img, model_w, model_h, model_type)?;
 
     if verbose {
         println!("[VERBOSE] Step: Running model inference...");
