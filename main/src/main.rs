@@ -25,11 +25,11 @@ struct Cli {
     verbose: bool,
 
     /// Print version information
-    #[arg(short = 'V', long = "version", action = clap::ArgAction::Version)]
-    version: Option<bool>,
+    #[arg(short = 'V', long = "version", action = clap::ArgAction::SetTrue)]
+    version: bool,
 
     #[command(subcommand)]
-    command: Commands,
+    command: Option<Commands>,
 }
 
 #[derive(Subcommand, Debug)]
@@ -118,7 +118,8 @@ enum Commands {
         #[arg(long, default_value_t = 3, value_parser = clap::value_parser!(u8).range(1..=5))]
         rdp_level: u8,
     },
-    /// Erase the background of an image and save it as a transparent PNG
+    /// Erase the background of an image and save it as a transparent PNG.
+    /// Pre-trained models are automatically downloaded to ~/.rusticker/models/
     Stickerize {
         /// Path to the input image file (PNG, JPEG, or WEBP)
         #[arg(long)]
@@ -128,7 +129,7 @@ enum Commands {
         #[arg(short, long)]
         output: PathBuf,
 
-        /// Model to use for background removal (u2netp or rmbg)
+        /// Model to use for background removal (models are downloaded to ~/.rusticker/models/)
         #[arg(long, value_enum, default_value = "u2netp")]
         model: ModelType,
     },
@@ -140,12 +141,37 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let force = cli.force;
     let verbose = cli.verbose;
 
+    if cli.version {
+        let version_str = env!("CARGO_PKG_VERSION");
+        println!("rusticker v{} - Sticker tool build with Rust by drkbugs", version_str);
+        if verbose {
+            println!("\nSupported background removal models:");
+            println!("  - u2netp: https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2netp.onnx");
+            println!("  - rmbg: https://huggingface.co/briaai/RMBG-1.4/resolve/main/onnx/model.onnx");
+            println!("  - birefnet: https://github.com/danielgatis/rembg/releases/download/v0.0.0/BiRefNet-general-bb_swin_v1_tiny-epoch_232.onnx");
+        }
+        return Ok(());
+    }
+
+    let command = match cli.command {
+        Some(cmd) => cmd,
+        None => {
+            use clap::CommandFactory;
+            let mut cmd = Cli::command();
+            let err = cmd.error(
+                clap::error::ErrorKind::MissingSubcommand,
+                "A subcommand is required but one was not provided.",
+            );
+            err.exit();
+        }
+    };
+
     // Validate DPI values
     if dpi != 100 && dpi != 200 && dpi != 300 && dpi != 600 {
         return Err("DPI must be one of: 100, 200, 300, 600".into());
     }
 
-    match cli.command {
+    match command {
         Commands::Bake {
             figure,
             diameter,
