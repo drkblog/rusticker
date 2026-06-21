@@ -80,7 +80,42 @@ rusticker compose [OPTIONS] --figure <FIGURE> --input <INPUT>
 - `--rdp-level <RDP_LEVEL>`: Aggressiveness of RDP segment reduction. Accepts a value from `1` (least reduction, more segments) to `5` (most reduction, fewest segments) [default: `3`].
 - `-o, --output <OUTPUT>`: Output PDF file path [default: `composed.pdf`].
 
+#### `batch-compose`
+
+Composes stickers from multiple input images, quantities, and customized settings specified in a CSV file, laying them out dynamically across A4 pages.
+
+```bash
+rusticker batch-compose [OPTIONS] --input <INPUT>
+```
+
+- `--input <INPUT>`: Path to the input CSV configuration file.
+- `-o, --output <OUTPUT>`: Output PDF file path [default: `batch_composed.pdf`].
+
+##### CSV File Format
+
+The CSV configuration file contains one entry per line, using the format:
+```csv
+<image_path>, <quantity>, <command_line_arguments_for_compose>
+```
+
+- `<image_path>`: The path to the image file (PNG/JPEG). Can be optionally enclosed in double quotes if the path contains commas or spaces.
+- `<quantity>`: An integer specifying how many stickers to print for this image.
+- `<command_line_arguments_for_compose>`: Space-separated command-line arguments corresponding to options in the `compose` subcommand (e.g. `--figure <FIGURE>`, size options like `--diameter`, `--side`, `--width`/`--height`, or outline settings like `--stroke-thickness` or `--algorithm`).
+
+Example CSV content (`stickers.csv`):
+```csv
+"C:\path with space\future.png", 4, --figure mask
+C:\stickers\button.png, 6, --figure circle --diameter 200
+C:\stickers\dice.png, 3, --figure square --side 230 --stroke-thickness 0.5
+```
+
+##### Validation and Layout
+
+- **Pre-Validation**: `rusticker` validates the CSV first. If any image file is missing, any quantity is invalid, or any command line argument fails parsing, the command aborts immediately before generating any output.
+- **Mixed Layouts**: The layout engine dynamically places stickers of different sizes side-by-side using a **Row-by-Row Flow Layout**. When a row is full, it wraps to the next row, and automatically adds new A4 pages as needed.
+
 #### `stickerize`
+
 
 Erases the background of an input image (PNG, JPEG, or WEBP) using a neural network model, saving the transparent output as a PNG.
 
@@ -150,6 +185,11 @@ cargo run -- compose --figure rectangle --input my_sticker.png --width 150 --hei
 ### Compose smooth vectorial curves around a mask foreground
 ```bash
 cargo run -- compose --figure mask --algorithm curves --rdp-level 4 --input my_sticker.png -o smooth_curves.pdf
+```
+
+### Compose stickers from multiple images via CSV configuration
+```bash
+cargo run -- batch-compose --input stickers.csv -o mixed_stickers.pdf
 ```
 
 ### Erase the background of an image to create a transparent sticker
