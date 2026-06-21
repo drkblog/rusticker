@@ -110,6 +110,7 @@ pub fn bake_grid(
     width_px: u32,
     height_px: u32,
     dpi: u32,
+    margin_mm: f64,
     min_space_mm: f64,
     stroke_thickness_mm: f64,
     output_path: PathBuf,
@@ -133,8 +134,7 @@ pub fn bake_grid(
     let width_pt = (width_px as f64) / (dpi as f64) * 72.0;
     let height_pt = (height_px as f64) / (dpi as f64) * 72.0;
 
-    // Set layout parameters: 10mm margins, min_space_mm gap between figures
-    let margin_mm = 10.0f64;
+    // Set layout parameters: custom margins, min_space_mm gap between figures
     let gap_mm = min_space_mm;
 
     let margin_pt = margin_mm / 25.4 * 72.0;
@@ -410,6 +410,7 @@ pub fn compose_grid(
     width_px: Option<u32>,
     height_px: Option<u32>,
     dpi: u32,
+    margin_mm: f64,
     min_space_mm: f64,
     stroke_thickness_mm: f64,
     output_path: PathBuf,
@@ -514,8 +515,7 @@ pub fn compose_grid(
         )
     };
 
-    // Set layout parameters: 10mm margins, min_space_mm gap between figures
-    let margin_mm = 10.0f64;
+    // Set layout parameters: custom margins, min_space_mm gap between figures
     let gap_mm = min_space_mm;
 
     let margin_pt = margin_mm / 25.4 * 72.0;
@@ -898,6 +898,7 @@ struct PlacedInstance {
 pub fn batch_compose_grid(
     stickers: Vec<BatchStickerInput>,
     dpi: u32,
+    margin_mm: f64,
     output_path: PathBuf,
     verbose: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -969,7 +970,7 @@ pub fn batch_compose_grid(
         let page_height_mm = 297.0f32;
         let page_width_pt = (page_width_mm as f64) / 25.4 * 72.0;
         let page_height_pt = (page_height_mm as f64) / 25.4 * 72.0;
-        let margin_pt = 10.0 / 25.4 * 72.0;
+        let margin_pt = margin_mm / 25.4 * 72.0;
         let available_width = page_width_pt - 2.0 * margin_pt;
         let available_height = page_height_pt - 2.0 * margin_pt;
 
@@ -997,7 +998,7 @@ pub fn batch_compose_grid(
     let page_height_mm = 297.0f32;
     let page_width_pt = (page_width_mm as f64) / 25.4 * 72.0;
     let page_height_pt = (page_height_mm as f64) / 25.4 * 72.0;
-    let margin_pt = 10.0 / 25.4 * 72.0;
+    let margin_pt = margin_mm / 25.4 * 72.0;
 
     let mut pages_placements: Vec<Vec<PlacedInstance>> = Vec::new();
     let mut current_page: Vec<PlacedInstance> = Vec::new();

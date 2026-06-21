@@ -17,6 +17,10 @@ struct Cli {
     #[arg(long, global = true, default_value_t = 300)]
     dpi: u32,
 
+    /// Page margin in millimeters
+    #[arg(long, global = true, default_value_t = 5.0)]
+    margin: f64,
+
     /// Force overwrite of the output file if it already exists
     #[arg(long, global = true)]
     force: bool,
@@ -119,6 +123,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let dpi = cli.dpi;
     let force = cli.force;
     let verbose = cli.verbose;
+    let margin = cli.margin;
 
     if cli.version {
         let version_str = env!("CARGO_PKG_VERSION");
@@ -202,7 +207,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     return Err("The 'mask' figure type requires an input image and is not supported in the bake subcommand.".into());
                 }
             };
-            bake_grid(figure, w, h, dpi, min_space, stroke_thickness, output, verbose)?;
+            bake_grid(figure, w, h, dpi, margin, min_space, stroke_thickness, output, verbose)?;
         }
         Commands::Compose {
             input,
@@ -223,6 +228,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 resolved_w,
                 resolved_h,
                 dpi,
+                margin,
                 args.min_space,
                 args.stroke_thickness,
                 output,
@@ -249,7 +255,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if verbose {
                 println!("[VERBOSE] CSV validated successfully. Starting batch PDF composition...");
             }
-            pdf_generator::batch_compose_grid(stickers, dpi, output, verbose)?;
+            pdf_generator::batch_compose_grid(stickers, dpi, margin, output, verbose)?;
         }
         Commands::Stickerize {
             input,

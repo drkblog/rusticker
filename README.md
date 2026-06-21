@@ -32,6 +32,7 @@ rusticker [GLOBAL_OPTIONS] <SUBCOMMAND>
 ### Global Options
 
 - `--dpi <DPI>`: Resolution of the application in DPI (dots per inch). Allowed values: `100`, `200`, `300`, `600` [default: `300`].
+- `--margin <MARGIN>`: Page margin on the A4 page in millimeters [default: `5.0`].
 - `--force`: Required to overwrite the output PDF file if it already exists.
 - `-v, --verbose`: Show verbose logs on stdout describing layout calculations, cropping dimensions, grid slots, and mask statistics.
 - `-h, --help`: Prints help information.
