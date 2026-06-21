@@ -1,7 +1,7 @@
 use clap::{Parser, Subcommand};
 use background_remover::{remove_background, ModelType};
-use pdf_generator::{bake_grid, compose_grid, FigureType, MaskAlgorithmType};
-use std::path::PathBuf;
+use pdf_generator::{bake_grid, compose_grid, FigureType, BatchComposeLineArgs, BatchComposeLineParser, BatchStickerInput};
+use std::path::{Path, PathBuf};
 
 /// Rusticker CLI application
 #[derive(Parser, Debug)]
@@ -71,53 +71,31 @@ enum Commands {
     },
     /// Compose figures and repeat an input image into a PDF grid on an A4 page
     Compose {
-        /// Type of figure to bake (square or circle)
-        #[arg(long, value_enum)]
-        figure: FigureType,
-
         /// Path to the input image file (PNG or JPEG)
         #[arg(long)]
         input: PathBuf,
-
-        /// Diameter of the circle in pixels (optional for circle)
-        #[arg(long)]
-        diameter: Option<u32>,
-
-        /// Side length of the square in pixels (optional for square)
-        #[arg(long)]
-        side: Option<u32>,
-
-        /// Width of the rectangle in pixels (optional for rectangle)
-        #[arg(long)]
-        width: Option<u32>,
-
-        /// Height of the rectangle in pixels (optional for rectangle)
-        #[arg(long)]
-        height: Option<u32>,
-
-        /// Size of the mask figure in pixels
-        #[arg(long)]
-        size: Option<u32>,
-
-        /// Minimum space in millimeters between a figure and the others surrounding it
-        #[arg(long, default_value_t = 2.0)]
-        min_space: f64,
-
-        /// Stroke thickness of the figure outline in millimeters
-        #[arg(long, default_value_t = 1.0)]
-        stroke_thickness: f64,
 
         /// Output file path for the PDF
         #[arg(short, long, default_value = "composed.pdf")]
         output: PathBuf,
 
-        /// Algorithm to use for mask generation (basic, advanced, or curves)
-        #[arg(long, value_enum, default_value = "advanced")]
-        algorithm: MaskAlgorithmType,
+        #[command(flatten)]
+        args: BatchComposeLineArgs,
+    },
+    /// Compose stickers from a CSV configuration file into a PDF grid across A4 pages
+    #[command(long_about = "Compose stickers from a CSV configuration file into a PDF grid across A4 pages.\n\n\
+        The CSV file must contain the following columns per line:\n\
+        <image_path>, <quantity>, <command_line_arguments_for_compose>\n\n\
+        Example:\n\
+        \"C:\\path\\to\\image.png\", 6, --figure circle --diameter 120 --stroke-thickness 1.5")]
+    BatchCompose {
+        /// Path to the input CSV file. Format: <image_path>, <quantity>, <command_line_arguments>
+        #[arg(long)]
+        input: PathBuf,
 
-        /// Optimization level for RDP simplification (1 = low, 5 = high)
-        #[arg(long, default_value_t = 3, value_parser = clap::value_parser!(u8).range(1..=5))]
-        rdp_level: u8,
+        /// Output file path for the PDF
+        #[arg(short, long, default_value = "batch_composed.pdf")]
+        output: PathBuf,
     },
     /// Erase the background of an image and save it as a transparent PNG.
     /// Pre-trained models are automatically downloaded to ~/.rusticker/models/
@@ -227,18 +205,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             bake_grid(figure, w, h, dpi, min_space, stroke_thickness, output, verbose)?;
         }
         Commands::Compose {
-            figure,
             input,
-            diameter,
-            side,
-            width,
-            height,
-            size,
-            min_space,
-            stroke_thickness,
             output,
-            algorithm,
-            rdp_level,
+            args,
         } => {
             if output.exists() && !force {
                 return Err(format!(
@@ -247,49 +216,40 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 )
                 .into());
             }
-            let (resolved_w, resolved_h) = match figure {
-                FigureType::Circle => {
-                    if side.is_some() || width.is_some() || height.is_some() || size.is_some() {
-                        return Err("Error: Cannot specify --side, --width, --height, or --size for a circle figure. Use --diameter instead.".into());
-                    }
-                    (diameter, diameter)
-                }
-                FigureType::Square => {
-                    if diameter.is_some() || width.is_some() || height.is_some() || size.is_some() {
-                        return Err("Error: Cannot specify --diameter, --width, --height, or --size for a square figure. Use --side instead.".into());
-                    }
-                    (side, side)
-                }
-                FigureType::Rectangle => {
-                    if diameter.is_some() || side.is_some() || size.is_some() {
-                        return Err("Error: Cannot specify --diameter, --side, or --size for a rectangle figure. Use --width and --height instead.".into());
-                    }
-                    match (width, height) {
-                        (None, None) => (None, None),
-                        (Some(w), Some(h)) => (Some(w), Some(h)),
-                        _ => return Err("Error: For a rectangle figure, either specify both --width and --height, or specify neither.".into()),
-                    }
-                }
-                FigureType::Mask => {
-                    if diameter.is_some() || side.is_some() || width.is_some() || height.is_some() {
-                        return Err("Error: Cannot specify --diameter, --side, --width, or --height for a mask figure. Use --size instead.".into());
-                    }
-                    (size, size)
-                }
-            };
+            let (resolved_w, resolved_h) = args.resolve_dimensions()?;
             compose_grid(
-                figure,
+                args.figure,
                 input,
                 resolved_w,
                 resolved_h,
                 dpi,
-                min_space,
-                stroke_thickness,
+                args.min_space,
+                args.stroke_thickness,
                 output,
                 verbose,
-                algorithm,
-                rdp_level,
+                args.algorithm,
+                args.rdp_level,
             )?;
+        }
+        Commands::BatchCompose {
+            input,
+            output,
+        } => {
+            if output.exists() && !force {
+                return Err(format!(
+                    "Output file '{}' already exists. Use --force to overwrite.",
+                    output.display()
+                )
+                .into());
+            }
+            if verbose {
+                println!("[VERBOSE] Validating CSV file: '{}'...", input.display());
+            }
+            let stickers = validate_and_parse_csv(&input, verbose)?;
+            if verbose {
+                println!("[VERBOSE] CSV validated successfully. Starting batch PDF composition...");
+            }
+            pdf_generator::batch_compose_grid(stickers, dpi, output, verbose)?;
         }
         Commands::Stickerize {
             input,
@@ -302,3 +262,152 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
+
+fn parse_csv_line(line: &str) -> Result<(PathBuf, u32, String), String> {
+    let line = line.trim();
+    if line.is_empty() {
+        return Err("Empty line".to_string());
+    }
+    
+    let (path_str, rest) = if line.starts_with('"') {
+        let closing_quote_idx = line[1..].find('"')
+            .ok_or_else(|| "Mismatched double quotes in image path".to_string())?;
+        let path = &line[1..1 + closing_quote_idx];
+        let rest_after_quote = &line[1 + closing_quote_idx + 1..];
+        let first_comma_idx = rest_after_quote.find(',')
+            .ok_or_else(|| "Missing quantity and arguments after image path".to_string())?;
+        (path, &rest_after_quote[first_comma_idx + 1..])
+    } else {
+        let first_comma_idx = line.find(',')
+            .ok_or_else(|| "Missing comma after image path".to_string())?;
+        (&line[..first_comma_idx], &line[first_comma_idx + 1..])
+    };
+    
+    let (qty_str, args_str) = match rest.find(',') {
+        Some(idx) => (&rest[..idx], &rest[idx + 1..]),
+        None => (rest, ""),
+    };
+    
+    let path = PathBuf::from(path_str.trim());
+    let qty = qty_str.trim().parse::<u32>()
+        .map_err(|_| format!("Invalid quantity: '{}'", qty_str.trim()))?;
+    let args = args_str.trim().to_string();
+    
+    Ok((path, qty, args))
+}
+
+fn validate_and_parse_csv(
+    path: &Path,
+    _verbose: bool,
+) -> Result<Vec<BatchStickerInput>, Box<dyn std::error::Error>> {
+    let file = std::fs::File::open(path)?;
+    let reader = std::io::BufReader::new(file);
+    use std::io::BufRead;
+    
+    let mut stickers = Vec::new();
+    let mut row_idx = 0;
+    
+    for line_res in reader.lines() {
+        row_idx += 1;
+        let line = line_res?;
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        
+        let (image_path, qty, args_str) = parse_csv_line(&line)
+            .map_err(|e| format!("Row {} error: {}", row_idx, e))?;
+            
+        // Check image existence
+        if !image_path.exists() {
+            return Err(format!("Row {} error: Image file does not exist at '{}'", row_idx, image_path.display()).into());
+        }
+        if !image_path.is_file() {
+            return Err(format!("Row {} error: Path '{}' is not a file", row_idx, image_path.display()).into());
+        }
+        
+        // Parse arguments using clap
+        let tokens = args_str.split_whitespace();
+        
+        let parser = BatchComposeLineParser::try_parse_from(tokens)
+            .map_err(|e| format!("Row {} command-line arguments parsing error:\n{}", row_idx, e))?;
+            
+        let line_args = parser.args;
+        
+        // Resolve and validate shape dimensions
+        let resolved_crop = line_args.resolve_dimensions()
+            .map_err(|e| format!("Row {} validation error: {}", row_idx, e))?;
+            
+        stickers.push(BatchStickerInput {
+            figure: line_args.figure,
+            input_path: image_path,
+            width_px: resolved_crop.0,
+            height_px: resolved_crop.1,
+            min_space_mm: line_args.min_space,
+            stroke_thickness_mm: line_args.stroke_thickness,
+            algorithm: line_args.algorithm,
+            rdp_level: line_args.rdp_level,
+            quantity: qty,
+        });
+    }
+    
+    if stickers.is_empty() {
+        return Err("CSV file contains no sticker entries".into());
+    }
+    
+    Ok(stickers)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_csv_line_unquoted() {
+        let line = "path/to/image.png, 6, --figure circle --diameter 120";
+        let (path, qty, args) = parse_csv_line(line).unwrap();
+        assert_eq!(path, Path::new("path/to/image.png"));
+        assert_eq!(qty, 6);
+        assert_eq!(args, "--figure circle --diameter 120");
+    }
+
+    #[test]
+    fn test_parse_csv_line_quoted_comma() {
+        let line = "\"path,with,comma.png\", 3, --figure square --side 150";
+        let (path, qty, args) = parse_csv_line(line).unwrap();
+        assert_eq!(path, Path::new("path,with,comma.png"));
+        assert_eq!(qty, 3);
+        assert_eq!(args, "--figure square --side 150");
+    }
+
+    #[test]
+    fn test_parse_csv_line_quoted_space() {
+        let line = "\"path with space.png\", 2, --figure rectangle --width 100 --height 50";
+        let (path, qty, args) = parse_csv_line(line).unwrap();
+        assert_eq!(path, Path::new("path with space.png"));
+        assert_eq!(qty, 2);
+        assert_eq!(args, "--figure rectangle --width 100 --height 50");
+    }
+
+    #[test]
+    fn test_parse_csv_line_no_args() {
+        let line = "image.png, 10";
+        let (path, qty, args) = parse_csv_line(line).unwrap();
+        assert_eq!(path, Path::new("image.png"));
+        assert_eq!(qty, 10);
+        assert_eq!(args, "");
+    }
+
+    #[test]
+    fn test_parse_csv_line_invalid_qty() {
+        let line = "image.png, abc, --figure circle";
+        assert!(parse_csv_line(line).is_err());
+    }
+
+    #[test]
+    fn test_parse_csv_line_missing_fields() {
+        let line = "image.png";
+        assert!(parse_csv_line(line).is_err());
+    }
+}
+
