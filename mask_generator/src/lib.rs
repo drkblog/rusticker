@@ -16,9 +16,8 @@ pub trait MaskAlgorithm {
 /// background pixels and contour tracing to extract boundary loops.
 pub struct BasicTracer;
 
-impl MaskAlgorithm for BasicTracer {
-    fn trace_mask(
-        &self,
+impl BasicTracer {
+    pub fn trace_raw_mask(
         img: &DynamicImage,
         verbose: bool,
     ) -> Result<Vec<Vec<((f64, f64), bool)>>, Box<dyn std::error::Error>> {
@@ -143,6 +142,29 @@ impl MaskAlgorithm for BasicTracer {
         Ok(mapped_loops)
     }
 }
+
+impl MaskAlgorithm for BasicTracer {
+    fn trace_mask(
+        &self,
+        img: &DynamicImage,
+        verbose: bool,
+    ) -> Result<Vec<Vec<((f64, f64), bool)>>, Box<dyn std::error::Error>> {
+        let raw_loops = BasicTracer::trace_raw_mask(img, verbose)?;
+
+        let loops_count = raw_loops.len();
+        let total_vertices: usize = raw_loops.iter().map(|lp| lp.len()).sum();
+
+        if total_vertices > 5000 || loops_count > 20 {
+            return Err(format!(
+                "Image is too complex: outline contains {} vertices and {} loops. The maximum supported limits are 5000 vertices and 20 loops.",
+                total_vertices, loops_count
+            )
+            .into());
+        }
+
+        Ok(raw_loops)
+    }
+}
 fn perpendicular_distance(p: (f64, f64), a: (f64, f64), b: (f64, f64)) -> f64 {
     let dx = b.0 - a.0;
     let dy = b.1 - a.1;
@@ -216,14 +238,14 @@ impl MaskAlgorithm for AdvancedTracer {
         verbose: bool,
     ) -> Result<Vec<Vec<((f64, f64), bool)>>, Box<dyn std::error::Error>> {
         // Use BasicTracer to get raw mask outline
-        let raw_loops = BasicTracer.trace_mask(img, false)?;
+        let raw_loops = BasicTracer::trace_raw_mask(img, false)?;
 
         let loops_count = raw_loops.len();
         let total_vertices: usize = raw_loops.iter().map(|lp| lp.len()).sum();
 
-        if total_vertices > 5000 || loops_count > 20 {
+        if total_vertices > 10000 || loops_count > 20 {
             return Err(format!(
-                "Image is too complex: outline contains {} vertices and {} loops. The maximum supported limits are 5000 vertices and 20 loops.",
+                "Image is too complex: outline contains {} vertices and {} loops. The maximum supported limits are 10000 vertices and 20 loops.",
                 total_vertices, loops_count
             )
             .into());
@@ -291,14 +313,14 @@ impl MaskAlgorithm for CurvesTracer {
         verbose: bool,
     ) -> Result<Vec<Vec<((f64, f64), bool)>>, Box<dyn std::error::Error>> {
         // Use BasicTracer to get raw mask outline
-        let raw_loops = BasicTracer.trace_mask(img, false)?;
+        let raw_loops = BasicTracer::trace_raw_mask(img, false)?;
 
         let loops_count = raw_loops.len();
         let total_vertices: usize = raw_loops.iter().map(|lp| lp.len()).sum();
 
-        if total_vertices > 5000 || loops_count > 20 {
+        if total_vertices > 20000 || loops_count > 20 {
             return Err(format!(
-                "Image is too complex: outline contains {} vertices and {} loops. The maximum supported limits are 5000 vertices and 20 loops.",
+                "Image is too complex: outline contains {} vertices and {} loops. The maximum supported limits are 20000 vertices and 20 loops.",
                 total_vertices, loops_count
             )
             .into());

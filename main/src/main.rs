@@ -62,7 +62,7 @@ enum Commands {
         min_space: f64,
 
         /// Stroke thickness of the figure outline in millimeters
-        #[arg(long, default_value_t = 1.0)]
+        #[arg(long, default_value_t = 0.25)]
         stroke_thickness: f64,
 
         /// Output file path for the PDF

@@ -53,7 +53,7 @@ rusticker bake [OPTIONS] --figure <FIGURE> [--diameter <DIAMETER> | --side <SIDE
 - `--width <WIDTH>`: Width of the rectangle in pixels (required for rectangle).
 - `--height <HEIGHT>`: Height of the rectangle in pixels (required for rectangle).
 - `--min-space <MIN_SPACE>`: Minimum spacing in millimeters between adjacent figures [default: `2.0`].
-- `--stroke-thickness <STROKE_THICKNESS>`: Stroke thickness of the figure outline in millimeters (e.g. `2.25`) [default: `1.0`].
+- `--stroke-thickness <STROKE_THICKNESS>`: Stroke thickness of the figure outline in millimeters (e.g. `2.25`) [default: `0.25`].
 - `-o, --output <OUTPUT>`: Output PDF file path [default: `baked.pdf`].
 
 #### `compose`
@@ -72,7 +72,7 @@ rusticker compose [OPTIONS] --figure <FIGURE> --input <INPUT>
 - `--height <HEIGHT>`: (Optional) Height of the rectangle in pixels.
 - `--size <SIZE>`: (Optional) Size of the mask figure in pixels. If not provided, no cropping is performed and the largest dimension of the input image is used as the base size.
 - `--min-space <MIN_SPACE>`: Minimum spacing in millimeters between adjacent figures [default: `2.0`].
-- `--stroke-thickness <STROKE_THICKNESS>`: Stroke thickness of the outline in millimeters [default: `1.0`].
+- `--stroke-thickness <STROKE_THICKNESS>`: Stroke thickness of the outline in millimeters [default: `0.25`].
 - `--algorithm <ALGORITHM>`: Algorithm to use for mask generation (`basic`, `advanced`, or `curves`). Only used when `--figure mask` is selected [default: `advanced`]:
   - `basic`: Traces exact pixel-stepped straight lines around the mask boundary.
   - `advanced`: Simplifies the outline using the Ramer-Douglas-Peucker (RDP) algorithm to drastically reduce vector segments.
@@ -115,8 +115,11 @@ Controls the aggressiveness of the RDP segment reduction. It accepts a value fro
 #### Complexity Limits & Safety Safeguards
 
 To prevent hangs or extremely large output files on complex or noisy images, `rusticker` enforces complexity limits on mask generation. If an image generates:
-- More than **5,000 vertices** in the raw outline, or
-- More than **20 separate loops**
+- More than **20 separate loops** (for all algorithms), or
+- More than the permitted **vertices** in the raw outline:
+  - **`basic`**: 5,000 vertices
+  - **`advanced`**: 10,000 vertices
+  - **`curves`**: 20,000 vertices
 
 The tool will abort with an error message detailing the complexity. For noisy images, clean up the background to a solid color before processing.
 

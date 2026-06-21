@@ -50,7 +50,7 @@ pub struct BatchComposeLineArgs {
     pub min_space: f64,
 
     /// Stroke thickness of the figure outline in millimeters
-    #[arg(long, default_value_t = 1.0)]
+    #[arg(long, default_value_t = 0.25)]
     pub stroke_thickness: f64,
 
     /// Algorithm to use for mask generation (basic, advanced, or curves)
