@@ -9,6 +9,7 @@ pub trait MaskAlgorithm {
         &self,
         img: &DynamicImage,
         verbose: bool,
+        is_unsafe: bool,
     ) -> Result<Vec<Vec<((f64, f64), bool)>>, Box<dyn std::error::Error>>;
 }
 
@@ -148,13 +149,14 @@ impl MaskAlgorithm for BasicTracer {
         &self,
         img: &DynamicImage,
         verbose: bool,
+        is_unsafe: bool,
     ) -> Result<Vec<Vec<((f64, f64), bool)>>, Box<dyn std::error::Error>> {
         let raw_loops = BasicTracer::trace_raw_mask(img, verbose)?;
 
         let loops_count = raw_loops.len();
         let total_vertices: usize = raw_loops.iter().map(|lp| lp.len()).sum();
 
-        if total_vertices > 5000 || loops_count > 20 {
+        if !is_unsafe && (total_vertices > 5000 || loops_count > 20) {
             return Err(format!(
                 "Image is too complex: outline contains {} vertices and {} loops. The maximum supported limits are 5000 vertices and 20 loops.",
                 total_vertices, loops_count
@@ -236,6 +238,7 @@ impl MaskAlgorithm for AdvancedTracer {
         &self,
         img: &DynamicImage,
         verbose: bool,
+        is_unsafe: bool,
     ) -> Result<Vec<Vec<((f64, f64), bool)>>, Box<dyn std::error::Error>> {
         // Use BasicTracer to get raw mask outline
         let raw_loops = BasicTracer::trace_raw_mask(img, false)?;
@@ -243,7 +246,7 @@ impl MaskAlgorithm for AdvancedTracer {
         let loops_count = raw_loops.len();
         let total_vertices: usize = raw_loops.iter().map(|lp| lp.len()).sum();
 
-        if total_vertices > 10000 || loops_count > 20 {
+        if !is_unsafe && (total_vertices > 10000 || loops_count > 20) {
             return Err(format!(
                 "Image is too complex: outline contains {} vertices and {} loops. The maximum supported limits are 10000 vertices and 20 loops.",
                 total_vertices, loops_count
@@ -311,6 +314,7 @@ impl MaskAlgorithm for CurvesTracer {
         &self,
         img: &DynamicImage,
         verbose: bool,
+        is_unsafe: bool,
     ) -> Result<Vec<Vec<((f64, f64), bool)>>, Box<dyn std::error::Error>> {
         // Use BasicTracer to get raw mask outline
         let raw_loops = BasicTracer::trace_raw_mask(img, false)?;
@@ -318,7 +322,7 @@ impl MaskAlgorithm for CurvesTracer {
         let loops_count = raw_loops.len();
         let total_vertices: usize = raw_loops.iter().map(|lp| lp.len()).sum();
 
-        if total_vertices > 20000 || loops_count > 20 {
+        if !is_unsafe && (total_vertices > 20000 || loops_count > 20) {
             return Err(format!(
                 "Image is too complex: outline contains {} vertices and {} loops. The maximum supported limits are 20000 vertices and 20 loops.",
                 total_vertices, loops_count
@@ -454,8 +458,8 @@ mod tests {
         }
 
         let dyn_img = DynamicImage::ImageRgba8(img);
-        let basic = BasicTracer.trace_mask(&dyn_img, false).unwrap();
-        let advanced = AdvancedTracer { rdp_level: 3 }.trace_mask(&dyn_img, false).unwrap();
+        let basic = BasicTracer.trace_mask(&dyn_img, false, false).unwrap();
+        let advanced = AdvancedTracer { rdp_level: 3 }.trace_mask(&dyn_img, false, false).unwrap();
 
         let basic_vertices: usize = basic.iter().map(|l| l.len()).sum();
         let advanced_vertices: usize = advanced.iter().map(|l| l.len()).sum();
@@ -482,10 +486,14 @@ mod tests {
         }
 
         let dyn_img = DynamicImage::ImageRgba8(img);
-        let result = AdvancedTracer { rdp_level: 3 }.trace_mask(&dyn_img, false);
+        let result = AdvancedTracer { rdp_level: 3 }.trace_mask(&dyn_img, false, false);
         assert!(result.is_err());
         let err_msg = result.err().unwrap().to_string();
         assert!(err_msg.contains("too complex") || err_msg.contains("loops"));
+
+        // With is_unsafe = true, it should succeed bypassing limits
+        let result_unsafe = AdvancedTracer { rdp_level: 3 }.trace_mask(&dyn_img, false, true);
+        assert!(result_unsafe.is_ok());
     }
 
     #[test]
@@ -508,8 +516,8 @@ mod tests {
         }
 
         let dyn_img = DynamicImage::ImageRgba8(img);
-        let level1 = AdvancedTracer { rdp_level: 1 }.trace_mask(&dyn_img, false).unwrap();
-        let level5 = AdvancedTracer { rdp_level: 5 }.trace_mask(&dyn_img, false).unwrap();
+        let level1 = AdvancedTracer { rdp_level: 1 }.trace_mask(&dyn_img, false, false).unwrap();
+        let level5 = AdvancedTracer { rdp_level: 5 }.trace_mask(&dyn_img, false, false).unwrap();
 
         let l1_vertices: usize = level1.iter().map(|l| l.len()).sum();
         let l5_vertices: usize = level5.iter().map(|l| l.len()).sum();
@@ -536,7 +544,7 @@ mod tests {
         }
 
         let dyn_img = DynamicImage::ImageRgba8(img);
-        let curves = CurvesTracer { rdp_level: 3 }.trace_mask(&dyn_img, false).unwrap();
+        let curves = CurvesTracer { rdp_level: 3 }.trace_mask(&dyn_img, false, false).unwrap();
 
         assert!(!curves.is_empty());
         let loop0 = &curves[0];

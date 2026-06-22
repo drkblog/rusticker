@@ -29,6 +29,10 @@ struct Cli {
     #[arg(long, global = true)]
     force: bool,
 
+    /// Disable some guardrails (like vertices and loops limits for figure mask)
+    #[arg(long, global = true)]
+    r#unsafe: bool,
+
     /// Show verbose logs on stdout
     #[arg(short = 'v', long = "verbose", global = true)]
     verbose: bool,
@@ -129,6 +133,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let verbose = cli.verbose;
     let margin = cli.margin;
     let page_size = cli.page_size;
+    let is_unsafe = cli.r#unsafe;
 
     if cli.version {
         let version_str = env!("CARGO_PKG_VERSION");
@@ -241,6 +246,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 args.algorithm,
                 args.rdp_level,
                 page_size,
+                is_unsafe,
             )?;
         }
         Commands::BatchCompose {
@@ -261,7 +267,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if verbose {
                 println!("[VERBOSE] CSV validated successfully. Starting batch PDF composition...");
             }
-            pdf_generator::batch_compose_grid(stickers, dpi, margin, output, verbose, page_size)?;
+            pdf_generator::batch_compose_grid(stickers, dpi, margin, output, verbose, page_size, is_unsafe)?;
         }
         Commands::Stickerize {
             input,

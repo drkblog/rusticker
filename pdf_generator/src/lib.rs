@@ -454,6 +454,7 @@ pub fn compose_grid(
     algorithm: MaskAlgorithmType,
     rdp_level: u8,
     page_size: PageSize,
+    is_unsafe: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     if verbose {
         println!("[VERBOSE] Step: Opening input image...");
@@ -506,15 +507,15 @@ pub fn compose_grid(
         match algorithm {
             MaskAlgorithmType::Basic => {
                 let tracer = BasicTracer;
-                loops = tracer.trace_mask(&cropped, verbose)?;
+                loops = tracer.trace_mask(&cropped, verbose, is_unsafe)?;
             }
             MaskAlgorithmType::Advanced => {
                 let tracer = AdvancedTracer { rdp_level };
-                loops = tracer.trace_mask(&cropped, verbose)?;
+                loops = tracer.trace_mask(&cropped, verbose, is_unsafe)?;
             }
             MaskAlgorithmType::Curves => {
                 let tracer = CurvesTracer { rdp_level };
-                loops = tracer.trace_mask(&cropped, verbose)?;
+                loops = tracer.trace_mask(&cropped, verbose, is_unsafe)?;
             }
         }
     }
@@ -940,6 +941,7 @@ pub fn batch_compose_grid(
     output_path: PathBuf,
     verbose: bool,
     page_size: PageSize,
+    is_unsafe: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut preprocessed = Vec::new();
     for sticker in &stickers {
@@ -974,13 +976,13 @@ pub fn batch_compose_grid(
         if sticker.figure == FigureType::Mask {
             match sticker.algorithm {
                 MaskAlgorithmType::Basic => {
-                    loops = BasicTracer.trace_mask(&cropped, verbose)?;
+                    loops = BasicTracer.trace_mask(&cropped, verbose, is_unsafe)?;
                 }
                 MaskAlgorithmType::Advanced => {
-                    loops = AdvancedTracer { rdp_level: sticker.rdp_level }.trace_mask(&cropped, verbose)?;
+                    loops = AdvancedTracer { rdp_level: sticker.rdp_level }.trace_mask(&cropped, verbose, is_unsafe)?;
                 }
                 MaskAlgorithmType::Curves => {
-                    loops = CurvesTracer { rdp_level: sticker.rdp_level }.trace_mask(&cropped, verbose)?;
+                    loops = CurvesTracer { rdp_level: sticker.rdp_level }.trace_mask(&cropped, verbose, is_unsafe)?;
                 }
             }
         }

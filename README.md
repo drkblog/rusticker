@@ -34,6 +34,7 @@ rusticker [GLOBAL_OPTIONS] <SUBCOMMAND>
 - `--dpi <DPI>`: Resolution of the application in DPI (dots per inch). Allowed values: `100`, `200`, `300`, `600` [default: `300`].
 - `--margin <MARGIN>`: Page margin on the A4 page in millimeters [default: `5.0`].
 - `--force`: Required to overwrite the output PDF file if it already exists.
+- `--unsafe`: Disable some guardrails (like vertices and loops limits for the `mask` figure type).
 - `-v, --verbose`: Show verbose logs on stdout describing layout calculations, cropping dimensions, grid slots, and mask statistics.
 - `-h, --help`: Prints help information.
 - `-V, --version`: Prints version information.
@@ -158,6 +159,9 @@ To prevent hangs or extremely large output files on complex or noisy images, `ru
   - **`curves`**: 20,000 vertices
 
 The tool will abort with an error message detailing the complexity. For noisy images, clean up the background to a solid color before processing.
+
+> [!NOTE]
+> You can bypass these complexity limits entirely by using the global option `--unsafe` (e.g. `rusticker --unsafe compose --figure mask ...`).
 
 ---
 
