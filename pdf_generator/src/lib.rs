@@ -19,6 +19,40 @@ pub enum MaskAlgorithmType {
     Curves,
 }
 
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum PageSize {
+    A0,
+    A1,
+    A2,
+    A3,
+    #[default]
+    A4,
+    A5,
+    A6,
+    A7,
+    #[value(alias = "us-letter")]
+    Letter,
+    #[value(alias = "us-legal")]
+    Legal,
+}
+
+impl PageSize {
+    pub fn dimensions_mm(&self) -> (f64, f64) {
+        match self {
+            PageSize::A0 => (841.0, 1189.0),
+            PageSize::A1 => (594.0, 841.0),
+            PageSize::A2 => (420.0, 594.0),
+            PageSize::A3 => (297.0, 420.0),
+            PageSize::A4 => (210.0, 297.0),
+            PageSize::A5 => (148.0, 210.0),
+            PageSize::A6 => (105.0, 148.0),
+            PageSize::A7 => (74.0, 105.0),
+            PageSize::Letter => (215.9, 279.4),
+            PageSize::Legal => (215.9, 355.6),
+        }
+    }
+}
+
 #[derive(Args, Debug, Clone)]
 pub struct BatchComposeLineArgs {
     /// Type of figure to bake
@@ -115,6 +149,7 @@ pub fn bake_grid(
     stroke_thickness_mm: f64,
     output_path: PathBuf,
     verbose: bool,
+    page_size: PageSize,
 ) -> Result<(), Box<dyn std::error::Error>> {
     if figure == FigureType::Mask {
         return Err("The 'mask' figure type requires an input image and is not supported in the bake subcommand.".into());
@@ -122,11 +157,12 @@ pub fn bake_grid(
     if verbose {
         println!("[VERBOSE] Step: Initializing layout and calculating grid cells...");
     }
-    // A4 dimensions: 210mm x 297mm
-    let page_width_mm = 210.0f32;
-    let page_height_mm = 297.0f32;
+    // Page dimensions
+    let (page_w, page_h) = page_size.dimensions_mm();
+    let page_width_mm = page_w as f32;
+    let page_height_mm = page_h as f32;
 
-    // Convert A4 dimensions to PDF points (1 inch = 25.4 mm, 1 inch = 72 points)
+    // Convert page dimensions to PDF points (1 inch = 25.4 mm, 1 inch = 72 points)
     let page_width_pt = (page_width_mm as f64) / 25.4 * 72.0;
     let page_height_pt = (page_height_mm as f64) / 25.4 * 72.0;
 
@@ -417,6 +453,7 @@ pub fn compose_grid(
     verbose: bool,
     algorithm: MaskAlgorithmType,
     rdp_level: u8,
+    page_size: PageSize,
 ) -> Result<(), Box<dyn std::error::Error>> {
     if verbose {
         println!("[VERBOSE] Step: Opening input image...");
@@ -494,11 +531,12 @@ pub fn compose_grid(
     let pdf_image = RawImage::decode_from_bytes(&png_bytes, &mut image_warnings)
         .map_err(|e| format!("Failed to decode cropped image: {}", e))?;
 
-    // A4 dimensions: 210mm x 297mm
-    let page_width_mm = 210.0f32;
-    let page_height_mm = 297.0f32;
+    // Page dimensions
+    let (page_w, page_h) = page_size.dimensions_mm();
+    let page_width_mm = page_w as f32;
+    let page_height_mm = page_h as f32;
 
-    // Convert A4 dimensions to PDF points (1 inch = 25.4 mm, 1 inch = 72 points)
+    // Convert page dimensions to PDF points (1 inch = 25.4 mm, 1 inch = 72 points)
     let page_width_pt = (page_width_mm as f64) / 25.4 * 72.0;
     let page_height_pt = (page_height_mm as f64) / 25.4 * 72.0;
 
@@ -901,6 +939,7 @@ pub fn batch_compose_grid(
     margin_mm: f64,
     output_path: PathBuf,
     verbose: bool,
+    page_size: PageSize,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut preprocessed = Vec::new();
     for sticker in &stickers {
@@ -965,9 +1004,10 @@ pub fn batch_compose_grid(
             )
         };
 
-        // Validate that this sticker can fit on an A4 page
-        let page_width_mm = 210.0f32;
-        let page_height_mm = 297.0f32;
+        // Validate that this sticker can fit on the page
+        let (page_w, page_h) = page_size.dimensions_mm();
+        let page_width_mm = page_w as f32;
+        let page_height_mm = page_h as f32;
         let page_width_pt = (page_width_mm as f64) / 25.4 * 72.0;
         let page_height_pt = (page_height_mm as f64) / 25.4 * 72.0;
         let margin_pt = margin_mm / 25.4 * 72.0;
@@ -994,8 +1034,9 @@ pub fn batch_compose_grid(
         });
     }
 
-    let page_width_mm = 210.0f32;
-    let page_height_mm = 297.0f32;
+    let (page_w, page_h) = page_size.dimensions_mm();
+    let page_width_mm = page_w as f32;
+    let page_height_mm = page_h as f32;
     let page_width_pt = (page_width_mm as f64) / 25.4 * 72.0;
     let page_height_pt = (page_height_mm as f64) / 25.4 * 72.0;
     let margin_pt = margin_mm / 25.4 * 72.0;
@@ -1286,6 +1327,21 @@ mod tests {
             rdp_level: 3,
         };
         assert!(args.resolve_dimensions().is_err());
+    }
+
+    #[test]
+    fn test_page_size_dimensions() {
+        assert_eq!(PageSize::A0.dimensions_mm(), (841.0, 1189.0));
+        assert_eq!(PageSize::A1.dimensions_mm(), (594.0, 841.0));
+        assert_eq!(PageSize::A2.dimensions_mm(), (420.0, 594.0));
+        assert_eq!(PageSize::A3.dimensions_mm(), (297.0, 420.0));
+        assert_eq!(PageSize::A4.dimensions_mm(), (210.0, 297.0));
+        assert_eq!(PageSize::A5.dimensions_mm(), (148.0, 210.0));
+        assert_eq!(PageSize::A6.dimensions_mm(), (105.0, 148.0));
+        assert_eq!(PageSize::A7.dimensions_mm(), (74.0, 105.0));
+        assert_eq!(PageSize::Letter.dimensions_mm(), (215.9, 279.4));
+        assert_eq!(PageSize::Legal.dimensions_mm(), (215.9, 355.6));
+        assert_eq!(PageSize::default(), PageSize::A4);
     }
 }
 

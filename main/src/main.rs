@@ -1,6 +1,6 @@
 use clap::{Parser, Subcommand};
 use background_remover::{remove_background, ModelType};
-use pdf_generator::{bake_grid, compose_grid, FigureType, BatchComposeLineArgs, BatchComposeLineParser, BatchStickerInput};
+use pdf_generator::{bake_grid, compose_grid, FigureType, BatchComposeLineArgs, BatchComposeLineParser, BatchStickerInput, PageSize};
 use std::path::{Path, PathBuf};
 
 /// Rusticker CLI application
@@ -20,6 +20,10 @@ struct Cli {
     /// Page margin in millimeters
     #[arg(long, global = true, default_value_t = 5.0)]
     margin: f64,
+
+    /// Page size for the output PDF
+    #[arg(long, global = true, value_enum, default_value_t = PageSize::A4)]
+    page_size: PageSize,
 
     /// Force overwrite of the output file if it already exists
     #[arg(long, global = true)]
@@ -124,6 +128,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let force = cli.force;
     let verbose = cli.verbose;
     let margin = cli.margin;
+    let page_size = cli.page_size;
 
     if cli.version {
         let version_str = env!("CARGO_PKG_VERSION");
@@ -207,7 +212,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     return Err("The 'mask' figure type requires an input image and is not supported in the bake subcommand.".into());
                 }
             };
-            bake_grid(figure, w, h, dpi, margin, min_space, stroke_thickness, output, verbose)?;
+            bake_grid(figure, w, h, dpi, margin, min_space, stroke_thickness, output, verbose, page_size)?;
         }
         Commands::Compose {
             input,
@@ -235,6 +240,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 verbose,
                 args.algorithm,
                 args.rdp_level,
+                page_size,
             )?;
         }
         Commands::BatchCompose {
@@ -255,7 +261,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if verbose {
                 println!("[VERBOSE] CSV validated successfully. Starting batch PDF composition...");
             }
-            pdf_generator::batch_compose_grid(stickers, dpi, margin, output, verbose)?;
+            pdf_generator::batch_compose_grid(stickers, dpi, margin, output, verbose, page_size)?;
         }
         Commands::Stickerize {
             input,
