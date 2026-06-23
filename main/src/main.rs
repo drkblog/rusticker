@@ -231,6 +231,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 args.rdp_level,
                 page_size,
                 is_unsafe,
+                args.resize_outline,
             )?;
         }
         Commands::BatchCompose {
@@ -343,6 +344,7 @@ fn validate_and_parse_csv(
             algorithm: line_args.algorithm,
             rdp_level: line_args.rdp_level,
             quantity: qty,
+            resize_outline: line_args.resize_outline,
         });
     }
     

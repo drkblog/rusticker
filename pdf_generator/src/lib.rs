@@ -4,6 +4,15 @@ use printpdf::*;
 use std::path::PathBuf;
 use mask_generator::{MaskAlgorithm, BasicTracer, AdvancedTracer, CurvesTracer};
 
+fn validate_resize_outline(s: &str) -> Result<f64, String> {
+    let val: f64 = s.parse().map_err(|_| format!("`{}` is not a decimal number", s))?;
+    if val > 0.5 && val < 1.5 {
+        Ok(val)
+    } else {
+        Err("value must be greater than 0.5 and less than 1.5".to_string())
+    }
+}
+
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FigureType {
     Square,
@@ -94,6 +103,10 @@ pub struct BatchComposeLineArgs {
     /// Optimization level for RDP simplification (1 = low, 5 = high)
     #[arg(long, default_value_t = 3, value_parser = clap::value_parser!(u8).range(1..=5))]
     pub rdp_level: u8,
+
+    /// Resize factor for the contour outline (greater than 0.5 and less than 1.5)
+    #[arg(long, default_value_t = 1.0, value_parser = validate_resize_outline)]
+    pub resize_outline: f64,
 }
 
 #[derive(Parser, Debug)]
@@ -455,6 +468,7 @@ pub fn compose_grid(
     rdp_level: u8,
     page_size: PageSize,
     is_unsafe: bool,
+    resize_outline: f64,
 ) -> Result<(), Box<dyn std::error::Error>> {
     if verbose {
         println!("[VERBOSE] Step: Opening input image...");
@@ -544,8 +558,8 @@ pub fn compose_grid(
     // Convert figure size from pixels to PDF points
     let (width_pt, height_pt) = if figure == FigureType::Mask {
         (
-            (cropped_width as f64) / (dpi as f64) * 72.0,
-            (cropped_height as f64) / (dpi as f64) * 72.0,
+            (cropped_width as f64 * resize_outline) / (dpi as f64) * 72.0,
+            (cropped_height as f64 * resize_outline) / (dpi as f64) * 72.0,
         )
     } else {
         (
@@ -819,11 +833,20 @@ pub fn compose_grid(
                 }
                 FigureType::Mask => {
                     let scale = 72.0 / (dpi as f64);
+                    let img_width_pt = (cropped_width as f64) * scale;
+                    let img_height_pt = (cropped_height as f64) * scale;
+                    let cx_center = (cropped_width as f64) / 2.0;
+                    let cy_center = (cropped_height as f64) / 2.0;
                     for lp in &loops {
                         let mut points = Vec::new();
                         for &((cx, cy), is_bezier) in lp {
-                            let lx = x + (cx - 1.0) * scale;
-                            let ly = y + (cropped_height as f64 - (cy - 1.0)) * scale;
+                            let cx_centered = cx - 1.0 - cx_center;
+                            let cy_centered = cy - 1.0 - cy_center;
+                            let cx_scaled = cx_center + cx_centered * resize_outline;
+                            let cy_scaled = cy_center + cy_centered * resize_outline;
+
+                            let lx = x + (width_pt - img_width_pt) / 2.0 + cx_scaled * scale;
+                            let ly = y + (height_pt - img_height_pt) / 2.0 + (cropped_height as f64 - cy_scaled) * scale;
                             points.push(LinePoint {
                                 p: Point {
                                     x: Pt(lx as f32),
@@ -862,11 +885,26 @@ pub fn compose_grid(
             let x = margin_pt + (c as f64) * (width_pt + gap_pt);
             let y = page_height_pt - margin_pt - height_pt - (r as f64) * (height_pt + gap_pt);
 
+            let scale = 72.0 / (dpi as f64);
+            let img_width_pt = if figure == FigureType::Mask {
+                (cropped_width as f64) * scale
+            } else {
+                (actual_width_px as f64) * scale
+            };
+            let img_height_pt = if figure == FigureType::Mask {
+                (cropped_height as f64) * scale
+            } else {
+                (actual_height_px as f64) * scale
+            };
+            
+            let img_x = x + (width_pt - img_width_pt) / 2.0;
+            let img_y = y + (height_pt - img_height_pt) / 2.0;
+
             ops.push(Op::UseXobject {
                 id: image_xobject_id.clone(),
                 transform: XObjectTransform {
-                    translate_x: Some(Pt(x as f32)),
-                    translate_y: Some(Pt(y as f32)),
+                    translate_x: Some(Pt(img_x as f32)),
+                    translate_y: Some(Pt(img_y as f32)),
                     scale_x: Some(scale_factor),
                     scale_y: Some(scale_factor),
                     ..Default::default()
@@ -914,6 +952,7 @@ pub struct BatchStickerInput {
     pub algorithm: MaskAlgorithmType,
     pub rdp_level: u8,
     pub quantity: u32,
+    pub resize_outline: f64,
 }
 
 struct PreprocessedSticker {
@@ -926,6 +965,7 @@ struct PreprocessedSticker {
     min_space_mm: f64,
     stroke_thickness_mm: f64,
     quantity: u32,
+    resize_outline: f64,
 }
 
 struct PlacedInstance {
@@ -996,8 +1036,8 @@ pub fn batch_compose_grid(
 
         let (width_pt, height_pt) = if sticker.figure == FigureType::Mask {
             (
-                (cropped_width as f64) / (dpi as f64) * 72.0,
-                (cropped_height as f64) / (dpi as f64) * 72.0,
+                (cropped_width as f64 * sticker.resize_outline) / (dpi as f64) * 72.0,
+                (cropped_height as f64 * sticker.resize_outline) / (dpi as f64) * 72.0,
             )
         } else {
             (
@@ -1033,6 +1073,7 @@ pub fn batch_compose_grid(
             min_space_mm: sticker.min_space_mm,
             stroke_thickness_mm: sticker.stroke_thickness_mm,
             quantity: sticker.quantity,
+            resize_outline: sticker.resize_outline,
         });
     }
 
@@ -1186,11 +1227,25 @@ pub fn batch_compose_grid(
                 }
                 FigureType::Mask => {
                     let scale = 72.0 / (dpi as f64);
+                    let resize_outline = sticker.resize_outline;
+                    let cropped_width = sticker.width_pt / scale / resize_outline;
+                    let cropped_height = sticker.cropped_height_px as f64;
+                    let cx_center = cropped_width / 2.0;
+                    let cy_center = cropped_height / 2.0;
+                    
+                    let img_width_pt = cropped_width * scale;
+                    let img_height_pt = cropped_height * scale;
+
                     for lp in &sticker.loops {
                         let mut points = Vec::new();
                         for &((cx, cy), is_bezier) in lp {
-                            let lx = x + (cx - 1.0) * scale;
-                            let ly = y + (sticker.cropped_height_px as f64 - (cy - 1.0)) * scale;
+                            let cx_centered = cx - 1.0 - cx_center;
+                            let cy_centered = cy - 1.0 - cy_center;
+                            let cx_scaled = cx_center + cx_centered * resize_outline;
+                            let cy_scaled = cy_center + cy_centered * resize_outline;
+
+                            let lx = x + (w - img_width_pt) / 2.0 + cx_scaled * scale;
+                            let ly = y + (h - img_height_pt) / 2.0 + (cropped_height - cy_scaled) * scale;
                             points.push(LinePoint {
                                 p: Point {
                                     x: Pt(lx as f32),
@@ -1214,15 +1269,27 @@ pub fn batch_compose_grid(
         let scale_factor = (300.0 / (dpi as f64)) as f32;
 
         for placement in placements {
+            let sticker = &preprocessed[placement.sticker_index];
             let x = placement.x_pt;
             let y = placement.y_pt;
             let image_xobject_id = &image_xobject_ids[placement.sticker_index];
 
+            let scale = 72.0 / (dpi as f64);
+            let resize_outline = sticker.resize_outline;
+            let cropped_width = sticker.width_pt / scale / resize_outline;
+            let cropped_height = sticker.cropped_height_px as f64;
+            
+            let img_width_pt = cropped_width * scale;
+            let img_height_pt = cropped_height * scale;
+            
+            let img_x = x + (sticker.width_pt - img_width_pt) / 2.0;
+            let img_y = y + (sticker.height_pt - img_height_pt) / 2.0;
+
             ops.push(Op::UseXobject {
                 id: image_xobject_id.clone(),
                 transform: XObjectTransform {
-                    translate_x: Some(Pt(x as f32)),
-                    translate_y: Some(Pt(y as f32)),
+                    translate_x: Some(Pt(img_x as f32)),
+                    translate_y: Some(Pt(img_y as f32)),
                     scale_x: Some(scale_factor),
                     scale_y: Some(scale_factor),
                     ..Default::default()
@@ -1274,6 +1341,7 @@ mod tests {
             stroke_thickness: 1.0,
             algorithm: MaskAlgorithmType::Advanced,
             rdp_level: 3,
+            resize_outline: 1.0,
         };
         let dims = args.resolve_dimensions().unwrap();
         assert_eq!(dims, (Some(120), Some(120)));
@@ -1292,6 +1360,7 @@ mod tests {
             stroke_thickness: 1.0,
             algorithm: MaskAlgorithmType::Advanced,
             rdp_level: 3,
+            resize_outline: 1.0,
         };
         assert!(args.resolve_dimensions().is_err());
     }
@@ -1309,6 +1378,7 @@ mod tests {
             stroke_thickness: 1.0,
             algorithm: MaskAlgorithmType::Advanced,
             rdp_level: 3,
+            resize_outline: 1.0,
         };
         let dims = args.resolve_dimensions().unwrap();
         assert_eq!(dims, (Some(150), Some(100)));
@@ -1327,6 +1397,7 @@ mod tests {
             stroke_thickness: 1.0,
             algorithm: MaskAlgorithmType::Advanced,
             rdp_level: 3,
+            resize_outline: 1.0,
         };
         assert!(args.resolve_dimensions().is_err());
     }
@@ -1344,6 +1415,25 @@ mod tests {
         assert_eq!(PageSize::Letter.dimensions_mm(), (215.9, 279.4));
         assert_eq!(PageSize::Legal.dimensions_mm(), (215.9, 355.6));
         assert_eq!(PageSize::default(), PageSize::A4);
+    }
+
+    #[test]
+    fn test_validate_resize_outline() {
+        assert!(validate_resize_outline("1.0").is_ok());
+        assert_eq!(validate_resize_outline("1.0").unwrap(), 1.0);
+        assert!(validate_resize_outline("0.9").is_ok());
+        assert_eq!(validate_resize_outline("0.9").unwrap(), 0.9);
+        assert!(validate_resize_outline("1.1").is_ok());
+        assert_eq!(validate_resize_outline("1.1").unwrap(), 1.1);
+        
+        // Out of bounds cases
+        assert!(validate_resize_outline("0.5").is_err());
+        assert!(validate_resize_outline("0.4").is_err());
+        assert!(validate_resize_outline("1.5").is_err());
+        assert!(validate_resize_outline("1.6").is_err());
+        
+        // Invalid float inputs
+        assert!(validate_resize_outline("abc").is_err());
     }
 }
 
