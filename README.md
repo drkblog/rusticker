@@ -144,6 +144,8 @@ stickerize [OPTIONS] --input <INPUT> --output <OUTPUT>
   - `u2netp`: A lightweight, fast pre-trained model (~4.7 MB). If not locally cached, it downloads automatically from GitHub Releases to `~/.rusticker/models/u2netp.onnx`.
   - `rmbg`: Bria AI's high-quality background removal model (~176 MB). If not locally cached, it downloads automatically from Hugging Face to `~/.rusticker/models/rmbg.onnx`.
 - `--cuda`: Use CUDA GPU acceleration for inference if specified (CPU execution is used by default).
+- `-q, --quiet`: Do not output any logs or progress indicators to stdout (errors will still be printed).
+
 
 ### Mask Generation Algorithms
 

@@ -34,18 +34,22 @@ struct Cli {
     /// Use CUDA GPU acceleration for inference
     #[arg(long, default_value_t = false)]
     cuda: bool,
+
+    /// Do not output any logs to stdout
+    #[arg(short = 'q', long = "quiet", default_value_t = false)]
+    quiet: bool,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
     
-    if cli.verbose {
+    if cli.verbose && !cli.quiet {
         println!("[VERBOSE] Starting background removal on {:?}", cli.input);
     }
     
-    remove_background(cli.input, cli.output, cli.model, cli.force, cli.verbose, cli.cuda)?;
+    remove_background(cli.input, cli.output, cli.model, cli.force, cli.verbose, cli.cuda, cli.quiet)?;
     
-    if cli.verbose {
+    if cli.verbose && !cli.quiet {
         println!("[VERBOSE] Background removal finished successfully.");
     }
     Ok(())

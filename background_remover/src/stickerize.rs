@@ -120,7 +120,7 @@ fn get_model_path(model_type: ModelType) -> Result<PathBuf, Box<dyn std::error::
     Ok(path)
 }
 
-fn download_model(model_type: ModelType, dest: &Path, verbose: bool) -> Result<(), Box<dyn std::error::Error>> {
+fn download_model(model_type: ModelType, dest: &Path, verbose: bool, quiet: bool) -> Result<(), Box<dyn std::error::Error>> {
     let (url, name, size_str) = match model_type {
         ModelType::U2netp => (
             "https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2netp.onnx",
@@ -139,10 +139,12 @@ fn download_model(model_type: ModelType, dest: &Path, verbose: bool) -> Result<(
         ),
     };
 
-    if verbose {
-        println!("[VERBOSE] Downloading {} ONNX model from {} to {:?}", name, url, dest);
-    } else {
-        println!("Downloading {} ONNX model ({})... This may take a moment...", name, size_str);
+    if !quiet {
+        if verbose {
+            println!("[VERBOSE] Downloading {} ONNX model from {} to {:?}", name, url, dest);
+        } else {
+            println!("Downloading {} ONNX model ({})... This may take a moment...", name, size_str);
+        }
     }
 
     let response = ureq::get(url).call()?;
@@ -154,7 +156,9 @@ fn download_model(model_type: ModelType, dest: &Path, verbose: bool) -> Result<(
     let mut reader = response.into_reader();
     std::io::copy(&mut reader, &mut file)?;
 
-    println!("Model downloaded successfully!");
+    if !quiet {
+        println!("Model downloaded successfully!");
+    }
     Ok(())
 }
 
@@ -215,14 +219,15 @@ fn load_and_optimize_model(
     model_h: u32,
     model_type: ModelType,
     verbose: bool,
+    quiet: bool,
 ) -> Result<TypedModel, Box<dyn std::error::Error>> {
-    if verbose {
+    if verbose && !quiet {
         println!("[VERBOSE] Step: Loading ONNX model into tract and setting input fact...");
     }
     let model = if model_type == ModelType::Birefnet {
         let mut raw_model = tract_onnx::onnx().model_for_path(model_path)?;
         
-        if verbose {
+        if verbose && !quiet {
             println!("[VERBOSE] Patching BiRefNet graph...");
         }
         
@@ -235,7 +240,7 @@ fn load_and_optimize_model(
                 replaced_gather_count += 1;
             }
         }
-        if verbose {
+        if verbose && !quiet {
             println!("[VERBOSE] Replaced {} GatherNd nodes.", replaced_gather_count);
         }
 
@@ -264,7 +269,7 @@ fn load_and_optimize_model(
                 }
             }
         }
-        if verbose {
+        if verbose && !quiet {
             println!("[VERBOSE] Patched {} constant ops to TDim.", patched_count);
         }
 
@@ -294,6 +299,7 @@ pub fn remove_background(
     force: bool,
     verbose: bool,
     use_cuda: bool,
+    quiet: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     if output_path.exists() && !force {
         return Err(format!(
@@ -304,23 +310,34 @@ pub fn remove_background(
     }
 
     // 1. Load image
-    if verbose {
-        println!("[VERBOSE] Step: Loading input image from {:?}", input_path);
+    if !quiet {
+        if verbose {
+            println!("[VERBOSE] Step: Loading input image from {:?}", input_path);
+        } else {
+            println!("Step 1/6: Loading input image from {:?}", input_path);
+        }
     }
     let img = image::ImageReader::open(&input_path)?
         .with_guessed_format()?
         .decode()?;
 
     let (w_orig, h_orig) = img.dimensions();
-    if verbose {
+    if verbose && !quiet {
         println!("[VERBOSE] Original image dimensions: {}x{} px", w_orig, h_orig);
     }
 
     // 2. Determine and resolve ONNX model path
+    if !quiet {
+        if verbose {
+            println!("[VERBOSE] Step: Resolving ONNX model path...");
+        } else {
+            println!("Step 2/6: Loading neural network model ({:?})...", model_type);
+        }
+    }
     let resolved_model_path = get_model_path(model_type)?;
     if !resolved_model_path.exists() {
-        download_model(model_type, &resolved_model_path, verbose)?;
-    } else if verbose {
+        download_model(model_type, &resolved_model_path, verbose, quiet)?;
+    } else if verbose && !quiet {
         println!("[VERBOSE] Using cached model at {:?}", resolved_model_path);
     }
 
@@ -329,7 +346,7 @@ pub fn remove_background(
         ModelType::U2netp => (320, 320),
         ModelType::Rmbg | ModelType::Birefnet => (1024, 1024),
     };
-    if verbose {
+    if verbose && !quiet {
         println!(
             "[VERBOSE] Model expected input dimensions: {}x{} px",
             model_w, model_h
@@ -339,17 +356,17 @@ pub fn remove_background(
     // 4. Resolve runtime (CUDA with fallback to CPU if requested, otherwise CPU) and prepare runnable model
     let (model, device_name) = if use_cuda {
         if let Ok(Some(cuda_runtime)) = tract_onnx::prelude::runtime_for_name("cuda") {
-            if verbose {
+            if verbose && !quiet {
                 println!("[VERBOSE] CUDA runtime found in registry. Attempting compilation...");
             }
-            let model = load_and_optimize_model(&resolved_model_path, model_w, model_h, model_type, verbose)?;
+            let model = load_and_optimize_model(&resolved_model_path, model_w, model_h, model_type, verbose, quiet)?;
             match cuda_runtime.prepare(model) {
                 Ok(runnable_model) => (runnable_model, "CUDA"),
                 Err(e) => {
-                    if verbose {
+                    if verbose && !quiet {
                         println!("[VERBOSE] Failed to prepare model for CUDA runtime: {}. Falling back to CPU.", e);
                     }
-                    let model = load_and_optimize_model(&resolved_model_path, model_w, model_h, model_type, verbose)?;
+                    let model = load_and_optimize_model(&resolved_model_path, model_w, model_h, model_type, verbose, quiet)?;
                     let cpu_runtime = tract_onnx::prelude::runtime_for_name("cpu")
                         .or_else(|_| tract_onnx::prelude::runtime_for_name("default"))?
                         .ok_or_else(|| "No CPU/default runtime found in tract registry")?;
@@ -357,50 +374,66 @@ pub fn remove_background(
                 }
             }
         } else {
-            if verbose {
+            if verbose && !quiet {
                 println!("[VERBOSE] CUDA runtime requested but not found in registry. Using CPU.");
             }
-            let model = load_and_optimize_model(&resolved_model_path, model_w, model_h, model_type, verbose)?;
+            let model = load_and_optimize_model(&resolved_model_path, model_w, model_h, model_type, verbose, quiet)?;
             let cpu_runtime = tract_onnx::prelude::runtime_for_name("cpu")
                 .or_else(|_| tract_onnx::prelude::runtime_for_name("default"))?
                 .ok_or_else(|| "No CPU/default runtime found in tract registry")?;
             (cpu_runtime.prepare(model)?, "CPU")
         }
     } else {
-        if verbose {
+        if verbose && !quiet {
             println!("[VERBOSE] CUDA runtime not requested. Using CPU.");
         }
-        let model = load_and_optimize_model(&resolved_model_path, model_w, model_h, model_type, verbose)?;
+        let model = load_and_optimize_model(&resolved_model_path, model_w, model_h, model_type, verbose, quiet)?;
         let cpu_runtime = tract_onnx::prelude::runtime_for_name("cpu")
             .or_else(|_| tract_onnx::prelude::runtime_for_name("default"))?
             .ok_or_else(|| "No CPU/default runtime found in tract registry")?;
         (cpu_runtime.prepare(model)?, "CPU")
     };
 
-    if verbose {
-        println!("[VERBOSE] Image processing will be done with: {}", device_name);
+    if !quiet {
+        if verbose {
+            println!("[VERBOSE] Image processing will be done with: {}", device_name);
+        } else {
+            println!("Step 3/6: Preparing execution device (using {})...", device_name);
+        }
     }
 
     // 5. Preprocess image and perform inference
-    if verbose {
-        println!("[VERBOSE] Step: Preprocessing image for inference...");
+    if !quiet {
+        if verbose {
+            println!("[VERBOSE] Step: Preprocessing image for inference...");
+        } else {
+            println!("Step 4/6: Preprocessing image for inference...");
+        }
     }
     let input_tensor = prepare_input_tensor(&img, model_w, model_h, model_type)?;
 
-    if verbose {
-        println!("[VERBOSE] Step: Running model inference...");
+    if !quiet {
+        if verbose {
+            println!("[VERBOSE] Step: Running model inference...");
+        } else {
+            println!("Step 5/6: Running model inference (this may take a few seconds)...");
+        }
     }
     let mut result = model.run(tvec![input_tensor.into()])?;
 
-    if verbose {
+    if verbose && !quiet {
         println!("[VERBOSE] Step: Model execution completed. Parsing output mask...");
     }
     let mask_tensor = result.remove(0).into_tensor();
     let mask_array = mask_tensor.to_plain_array_view::<f32>()?;
 
     // 6. Post-process: Map mask back to original size & save as transparent PNG
-    if verbose {
-        println!("[VERBOSE] Step: Applying transparency mask to original image...");
+    if !quiet {
+        if verbose {
+            println!("[VERBOSE] Step: Applying transparency mask to original image...");
+        } else {
+            println!("Step 6/6: Applying transparency mask and saving to {:?}...", output_path);
+        }
     }
     let mut out_img = RgbaImage::new(w_orig, h_orig);
 
@@ -421,11 +454,13 @@ pub fn remove_background(
         }
     }
 
-    if verbose {
+    if verbose && !quiet {
         println!("[VERBOSE] Saving output transparent PNG to {:?}", output_path);
     }
     out_img.save(&output_path)?;
-    println!("Saved background-removed image to {:?}", output_path);
+    if !quiet {
+        println!("Saved background-removed image to {:?}", output_path);
+    }
 
     Ok(())
 }
