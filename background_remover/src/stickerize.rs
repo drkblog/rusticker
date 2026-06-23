@@ -293,6 +293,7 @@ pub fn remove_background(
     model_type: ModelType,
     force: bool,
     verbose: bool,
+    use_cuda: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     if output_path.exists() && !force {
         return Err(format!(
@@ -335,28 +336,39 @@ pub fn remove_background(
         );
     }
 
-    // 4. Resolve runtime (CUDA with fallback to CPU) and prepare runnable model
-    let (model, device_name) = if let Ok(Some(cuda_runtime)) = tract_onnx::prelude::runtime_for_name("cuda") {
-        if verbose {
-            println!("[VERBOSE] CUDA runtime found in registry. Attempting compilation...");
-        }
-        let model = load_and_optimize_model(&resolved_model_path, model_w, model_h, model_type, verbose)?;
-        match cuda_runtime.prepare(model) {
-            Ok(runnable_model) => (runnable_model, "CUDA"),
-            Err(e) => {
-                if verbose {
-                    println!("[VERBOSE] Failed to prepare model for CUDA runtime: {}. Falling back to CPU.", e);
-                }
-                let model = load_and_optimize_model(&resolved_model_path, model_w, model_h, model_type, verbose)?;
-                let cpu_runtime = tract_onnx::prelude::runtime_for_name("cpu")
-                    .or_else(|_| tract_onnx::prelude::runtime_for_name("default"))?
-                    .ok_or_else(|| "No CPU/default runtime found in tract registry")?;
-                (cpu_runtime.prepare(model)?, "CPU (CUDA failed)")
+    // 4. Resolve runtime (CUDA with fallback to CPU if requested, otherwise CPU) and prepare runnable model
+    let (model, device_name) = if use_cuda {
+        if let Ok(Some(cuda_runtime)) = tract_onnx::prelude::runtime_for_name("cuda") {
+            if verbose {
+                println!("[VERBOSE] CUDA runtime found in registry. Attempting compilation...");
             }
+            let model = load_and_optimize_model(&resolved_model_path, model_w, model_h, model_type, verbose)?;
+            match cuda_runtime.prepare(model) {
+                Ok(runnable_model) => (runnable_model, "CUDA"),
+                Err(e) => {
+                    if verbose {
+                        println!("[VERBOSE] Failed to prepare model for CUDA runtime: {}. Falling back to CPU.", e);
+                    }
+                    let model = load_and_optimize_model(&resolved_model_path, model_w, model_h, model_type, verbose)?;
+                    let cpu_runtime = tract_onnx::prelude::runtime_for_name("cpu")
+                        .or_else(|_| tract_onnx::prelude::runtime_for_name("default"))?
+                        .ok_or_else(|| "No CPU/default runtime found in tract registry")?;
+                    (cpu_runtime.prepare(model)?, "CPU (CUDA failed)")
+                }
+            }
+        } else {
+            if verbose {
+                println!("[VERBOSE] CUDA runtime requested but not found in registry. Using CPU.");
+            }
+            let model = load_and_optimize_model(&resolved_model_path, model_w, model_h, model_type, verbose)?;
+            let cpu_runtime = tract_onnx::prelude::runtime_for_name("cpu")
+                .or_else(|_| tract_onnx::prelude::runtime_for_name("default"))?
+                .ok_or_else(|| "No CPU/default runtime found in tract registry")?;
+            (cpu_runtime.prepare(model)?, "CPU")
         }
     } else {
         if verbose {
-            println!("[VERBOSE] CUDA runtime not found in registry. Using CPU.");
+            println!("[VERBOSE] CUDA runtime not requested. Using CPU.");
         }
         let model = load_and_optimize_model(&resolved_model_path, model_w, model_h, model_type, verbose)?;
         let cpu_runtime = tract_onnx::prelude::runtime_for_name("cpu")

@@ -20,7 +20,7 @@ struct Cli {
     output: PathBuf,
 
     /// Model to use for background removal (models are downloaded to ~/.rusticker/models/)
-    #[arg(long, value_enum, default_value = "u2netp")]
+    #[arg(long, value_enum, default_value = "birefnet")]
     model: ModelType,
 
     /// Force overwrite of the output file if it already exists
@@ -30,6 +30,10 @@ struct Cli {
     /// Show verbose logs on stdout
     #[arg(short = 'v', long = "verbose", default_value_t = false)]
     verbose: bool,
+
+    /// Use CUDA GPU acceleration for inference
+    #[arg(long, default_value_t = false)]
+    cuda: bool,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -39,7 +43,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("[VERBOSE] Starting background removal on {:?}", cli.input);
     }
     
-    remove_background(cli.input, cli.output, cli.model, cli.force, cli.verbose)?;
+    remove_background(cli.input, cli.output, cli.model, cli.force, cli.verbose, cli.cuda)?;
     
     if cli.verbose {
         println!("[VERBOSE] Background removal finished successfully.");
