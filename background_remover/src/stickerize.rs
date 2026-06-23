@@ -209,60 +209,18 @@ fn prepare_input_tensor(
     Ok(tensor)
 }
 
-pub fn remove_background(
-    input_path: PathBuf,
-    output_path: PathBuf,
+fn load_and_optimize_model(
+    model_path: &Path,
+    model_w: u32,
+    model_h: u32,
     model_type: ModelType,
-    force: bool,
     verbose: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
-    if output_path.exists() && !force {
-        return Err(format!(
-            "Output file '{}' already exists. Use --force to overwrite.",
-            output_path.display()
-        )
-        .into());
-    }
-
-    // 1. Load image
-    if verbose {
-        println!("[VERBOSE] Step: Loading input image from {:?}", input_path);
-    }
-    let img = image::ImageReader::open(&input_path)?
-        .with_guessed_format()?
-        .decode()?;
-
-    let (w_orig, h_orig) = img.dimensions();
-    if verbose {
-        println!("[VERBOSE] Original image dimensions: {}x{} px", w_orig, h_orig);
-    }
-
-    // 2. Determine and resolve ONNX model path
-    let resolved_model_path = get_model_path(model_type)?;
-    if !resolved_model_path.exists() {
-        download_model(model_type, &resolved_model_path, verbose)?;
-    } else if verbose {
-        println!("[VERBOSE] Using cached model at {:?}", resolved_model_path);
-    }
-
-    // 3. Set input dimensions based on model type
-    let (model_w, model_h) = match model_type {
-        ModelType::U2netp => (320, 320),
-        ModelType::Rmbg | ModelType::Birefnet => (1024, 1024),
-    };
-    if verbose {
-        println!(
-            "[VERBOSE] Model expected input dimensions: {}x{} px",
-            model_w, model_h
-        );
-    }
-
-    // 4. Load and optimize ONNX model using tract-onnx
+) -> Result<TypedModel, Box<dyn std::error::Error>> {
     if verbose {
         println!("[VERBOSE] Step: Loading ONNX model into tract and setting input fact...");
     }
     let model = if model_type == ModelType::Birefnet {
-        let mut raw_model = tract_onnx::onnx().model_for_path(&resolved_model_path)?;
+        let mut raw_model = tract_onnx::onnx().model_for_path(model_path)?;
         
         if verbose {
             println!("[VERBOSE] Patching BiRefNet graph...");
@@ -316,17 +274,100 @@ pub fn remove_background(
                 InferenceFact::dt_shape(f32::datum_type(), tvec!(1, 3, model_h as usize, model_w as usize))
             )?
             .into_optimized()?
-            .into_runnable()?
     } else {
         tract_onnx::onnx()
-            .model_for_path(&resolved_model_path)?
+            .model_for_path(model_path)?
             .with_input_fact(
                 0,
                 InferenceFact::dt_shape(f32::datum_type(), tvec!(1, 3, model_h as usize, model_w as usize))
             )?
             .into_optimized()?
-            .into_runnable()?
     };
+
+    Ok(model)
+}
+
+pub fn remove_background(
+    input_path: PathBuf,
+    output_path: PathBuf,
+    model_type: ModelType,
+    force: bool,
+    verbose: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if output_path.exists() && !force {
+        return Err(format!(
+            "Output file '{}' already exists. Use --force to overwrite.",
+            output_path.display()
+        )
+        .into());
+    }
+
+    // 1. Load image
+    if verbose {
+        println!("[VERBOSE] Step: Loading input image from {:?}", input_path);
+    }
+    let img = image::ImageReader::open(&input_path)?
+        .with_guessed_format()?
+        .decode()?;
+
+    let (w_orig, h_orig) = img.dimensions();
+    if verbose {
+        println!("[VERBOSE] Original image dimensions: {}x{} px", w_orig, h_orig);
+    }
+
+    // 2. Determine and resolve ONNX model path
+    let resolved_model_path = get_model_path(model_type)?;
+    if !resolved_model_path.exists() {
+        download_model(model_type, &resolved_model_path, verbose)?;
+    } else if verbose {
+        println!("[VERBOSE] Using cached model at {:?}", resolved_model_path);
+    }
+
+    // 3. Set input dimensions based on model type
+    let (model_w, model_h) = match model_type {
+        ModelType::U2netp => (320, 320),
+        ModelType::Rmbg | ModelType::Birefnet => (1024, 1024),
+    };
+    if verbose {
+        println!(
+            "[VERBOSE] Model expected input dimensions: {}x{} px",
+            model_w, model_h
+        );
+    }
+
+    // 4. Resolve runtime (CUDA with fallback to CPU) and prepare runnable model
+    let (model, device_name) = if let Ok(Some(cuda_runtime)) = tract_onnx::prelude::runtime_for_name("cuda") {
+        if verbose {
+            println!("[VERBOSE] CUDA runtime found in registry. Attempting compilation...");
+        }
+        let model = load_and_optimize_model(&resolved_model_path, model_w, model_h, model_type, verbose)?;
+        match cuda_runtime.prepare(model) {
+            Ok(runnable_model) => (runnable_model, "CUDA"),
+            Err(e) => {
+                if verbose {
+                    println!("[VERBOSE] Failed to prepare model for CUDA runtime: {}. Falling back to CPU.", e);
+                }
+                let model = load_and_optimize_model(&resolved_model_path, model_w, model_h, model_type, verbose)?;
+                let cpu_runtime = tract_onnx::prelude::runtime_for_name("cpu")
+                    .or_else(|_| tract_onnx::prelude::runtime_for_name("default"))?
+                    .ok_or_else(|| "No CPU/default runtime found in tract registry")?;
+                (cpu_runtime.prepare(model)?, "CPU (CUDA failed)")
+            }
+        }
+    } else {
+        if verbose {
+            println!("[VERBOSE] CUDA runtime not found in registry. Using CPU.");
+        }
+        let model = load_and_optimize_model(&resolved_model_path, model_w, model_h, model_type, verbose)?;
+        let cpu_runtime = tract_onnx::prelude::runtime_for_name("cpu")
+            .or_else(|_| tract_onnx::prelude::runtime_for_name("default"))?
+            .ok_or_else(|| "No CPU/default runtime found in tract registry")?;
+        (cpu_runtime.prepare(model)?, "CPU")
+    };
+
+    if verbose {
+        println!("[VERBOSE] Image processing will be done with: {}", device_name);
+    }
 
     // 5. Preprocess image and perform inference
     if verbose {
@@ -375,4 +416,20 @@ pub fn remove_background(
     println!("Saved background-removed image to {:?}", output_path);
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_runtime_resolution() {
+        // CPU runtime should always be available
+        let cpu_runtime = tract_onnx::prelude::runtime_for_name("cpu")
+            .or_else(|_| tract_onnx::prelude::runtime_for_name("default"))
+            .unwrap();
+        assert!(cpu_runtime.is_some());
+
+        // Check cuda runtime (might be None or Some depending on the system, but shouldn't panic)
+        let cuda_runtime = tract_onnx::prelude::runtime_for_name("cuda");
+        assert!(cuda_runtime.is_ok());
+    }
 }
