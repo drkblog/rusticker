@@ -21,9 +21,19 @@ Ensure you have [Rust and Cargo](https://rustup.rs/) installed, then clone the r
 cargo build --release
 ```
 
-The compiled binary will be located at `target/release/rusticker`.
+The compiled binaries will be located at:
+- `target/release/rusticker`: Main tool containing the layout commands (`bake`, `compose`, `batch-compose`).
+- `target/release/stickerize`: Background removal neural network tool.
 
 ## Usage
+
+The project is split into two standalone executables.
+
+---
+
+### 1. `rusticker`
+
+`rusticker` provides commands to generate sticker grid layouts in PDF format.
 
 ```bash
 rusticker [GLOBAL_OPTIONS] <SUBCOMMAND>
@@ -80,6 +90,7 @@ rusticker compose [OPTIONS] --figure <FIGURE> --input <INPUT>
   - `advanced`: Simplifies the outline using the Ramer-Douglas-Peucker (RDP) algorithm to drastically reduce vector segments.
   - `curves`: Converts the RDP simplified outline into smooth cubic Bézier curves (quadratic B-splines) for optimal vinyl plotter cutting.
 - `--rdp-level <RDP_LEVEL>`: Aggressiveness of RDP segment reduction. Accepts a value from `1` (least reduction, more segments) to `5` (most reduction, fewest segments) [default: `3`].
+- `--resize-outline <RESIZE_OUTLINE>`: Resize factor for the contour outline (greater than `0.5` and less than `1.5`). Only applied when `--figure mask` is selected [default: `1.0`].
 - `-o, --output <OUTPUT>`: Output PDF file path [default: `composed.pdf`].
 
 #### `batch-compose`
@@ -116,21 +127,23 @@ C:\stickers\dice.png, 3, --figure square --side 230 --stroke-thickness 0.5
 - **Pre-Validation**: `rusticker` validates the CSV first. If any image file is missing, any quantity is invalid, or any command line argument fails parsing, the command aborts immediately before generating any output.
 - **Mixed Layouts**: The layout engine dynamically places stickers of different sizes side-by-side using a **Row-by-Row Flow Layout**. When a row is full, it wraps to the next row, and automatically adds new A4 pages as needed.
 
-#### `stickerize`
+---
 
+### 2. `stickerize`
 
-Erases the background of an input image (PNG, JPEG, or WEBP) using a neural network model, saving the transparent output as a PNG.
+`stickerize` is a standalone tool that erases the background of an input image (PNG, JPEG, or WEBP) using a neural network model, saving the transparent output as a PNG.
 
 ```bash
-rusticker stickerize [OPTIONS] --input <INPUT> --output <OUTPUT>
+stickerize [OPTIONS] --input <INPUT> --output <OUTPUT>
 ```
 
 - `--input <INPUT>`: Path to the input image file (PNG, JPEG, or WEBP).
 - `-o, --output <OUTPUT>`: Output transparent PNG file path.
-- `--model <MODEL>`: The neural network model to use for background removal (`u2netp`, `rmbg`, or `birefnet`) [default: `u2netp`].
+- `--model <MODEL>`: The neural network model to use for background removal (`u2netp`, `rmbg`, or `birefnet`) [default: `birefnet`].
+  - `birefnet`: General-purpose BiRefNet model (~224 MB) [default]. If not locally cached, it downloads automatically from GitHub Releases to `~/.rusticker/models/birefnet.onnx`.
   - `u2netp`: A lightweight, fast pre-trained model (~4.7 MB). If not locally cached, it downloads automatically from GitHub Releases to `~/.rusticker/models/u2netp.onnx`.
   - `rmbg`: Bria AI's high-quality background removal model (~176 MB). If not locally cached, it downloads automatically from Hugging Face to `~/.rusticker/models/rmbg.onnx`.
-  - `birefnet`: General-purpose BiRefNet model (~224 MB). If not locally cached, it downloads automatically from GitHub Releases to `~/.rusticker/models/birefnet.onnx`.
+- `--cuda`: Use CUDA GPU acceleration for inference if specified (CPU execution is used by default).
 
 ### Mask Generation Algorithms
 
@@ -152,11 +165,14 @@ Controls the aggressiveness of the RDP segment reduction. It accepts a value fro
 #### Complexity Limits & Safety Safeguards
 
 To prevent hangs or extremely large output files on complex or noisy images, `rusticker` enforces complexity limits on mask generation. If an image generates:
-- More than **20 separate loops** (for all algorithms), or
-- More than the permitted **vertices** in the raw outline:
-  - **`basic`**: 5,000 vertices
-  - **`advanced`**: 10,000 vertices
-  - **`curves`**: 20,000 vertices
+- More loops than permitted:
+  - **`basic`**: 500 loops
+  - **`advanced`**: 1,500 loops
+  - **`curves`**: 3,000 loops
+- More vertices than permitted in the raw outline:
+  - **`basic`**: 1,000,000 vertices
+  - **`advanced`**: 2,000,000 vertices
+  - **`curves`**: 4,000,000 vertices
 
 The tool will abort with an error message detailing the complexity. For noisy images, clean up the background to a solid color before processing.
 
@@ -199,15 +215,15 @@ cargo run -- batch-compose --input stickers.csv -o mixed_stickers.pdf
 
 ### Erase the background of an image to create a transparent sticker
 ```bash
-cargo run --bin rusticker -- stickerize --input my_sticker.jpg -o my_sticker_transparent.png
+cargo run --bin stickerize -- --input my_sticker.jpg -o my_sticker_transparent.png
 ```
 
 ### Erase the background using the high-quality Bria RMBG-1.4 model
 ```bash
-cargo run --bin rusticker -- stickerize --model rmbg --input my_sticker.jpg -o my_sticker_transparent.png
+cargo run --bin stickerize -- --model rmbg --input my_sticker.jpg -o my_sticker_transparent.png
 ```
 
 ### Erase the background using the BiRefNet model
 ```bash
-cargo run --bin rusticker -- stickerize --model birefnet --input my_sticker.jpg -o my_sticker_transparent.png
+cargo run --bin stickerize -- --model birefnet --input my_sticker.jpg -o my_sticker_transparent.png
 ```
