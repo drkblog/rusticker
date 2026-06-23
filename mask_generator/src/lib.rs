@@ -156,9 +156,9 @@ impl MaskAlgorithm for BasicTracer {
         let loops_count = raw_loops.len();
         let total_vertices: usize = raw_loops.iter().map(|lp| lp.len()).sum();
 
-        if !is_unsafe && (total_vertices > 5000 || loops_count > 20) {
+        if !is_unsafe && (total_vertices > 50000 || loops_count > 50) {
             return Err(format!(
-                "Image is too complex: outline contains {} vertices and {} loops. The maximum supported limits are 5000 vertices and 20 loops.",
+                "Image is too complex: outline contains {} vertices and {} loops. The maximum supported limits are 50000 vertices and 50 loops.",
                 total_vertices, loops_count
             )
             .into());
@@ -246,9 +246,9 @@ impl MaskAlgorithm for AdvancedTracer {
         let loops_count = raw_loops.len();
         let total_vertices: usize = raw_loops.iter().map(|lp| lp.len()).sum();
 
-        if !is_unsafe && (total_vertices > 10000 || loops_count > 20) {
+        if !is_unsafe && (total_vertices > 100000 || loops_count > 60) {
             return Err(format!(
-                "Image is too complex: outline contains {} vertices and {} loops. The maximum supported limits are 10000 vertices and 20 loops.",
+                "Image is too complex: outline contains {} vertices and {} loops. The maximum supported limits are 100000 vertices and 60 loops.",
                 total_vertices, loops_count
             )
             .into());
@@ -322,9 +322,9 @@ impl MaskAlgorithm for CurvesTracer {
         let loops_count = raw_loops.len();
         let total_vertices: usize = raw_loops.iter().map(|lp| lp.len()).sum();
 
-        if !is_unsafe && (total_vertices > 20000 || loops_count > 20) {
+        if !is_unsafe && (total_vertices > 250000 || loops_count > 100) {
             return Err(format!(
-                "Image is too complex: outline contains {} vertices and {} loops. The maximum supported limits are 20000 vertices and 20 loops.",
+                "Image is too complex: outline contains {} vertices and {} loops. The maximum supported limits are 250000 vertices and 100 loops.",
                 total_vertices, loops_count
             )
             .into());
@@ -471,13 +471,13 @@ mod tests {
 
     #[test]
     fn test_advanced_tracer_complexity_limit() {
-        let mut img = RgbaImage::new(150, 150);
+        let mut img = RgbaImage::new(250, 250);
         let black = Rgba([0, 0, 0, 255]);
 
-        // Draw 30 disjoint checkerboard squares (each will create a loop)
-        for i in 0..30 {
-            let start_x = (i % 5) * 20 + 5;
-            let start_y = (i / 5) * 20 + 5;
+        // Draw 70 disjoint checkerboard squares (each will create a loop)
+        for i in 0..70 {
+            let start_x = (i % 10) * 20 + 5;
+            let start_y = (i / 10) * 20 + 5;
             for y in start_y..(start_y + 10) {
                 for x in start_x..(start_x + 10) {
                     img.put_pixel(x, y, black);
