@@ -6,18 +6,18 @@ use std::path::PathBuf;
 #[derive(Parser, Debug)]
 #[command(
     name = "stickerize",
-    version,
+    disable_version_flag = true,
     about = "Erase the background of an image and save it as a transparent PNG",
     long_about = None
 )]
 struct Cli {
     /// Path to the input image file (PNG, JPEG, or WEBP)
-    #[arg(long)]
-    input: PathBuf,
+    #[arg(long, required_unless_present = "version")]
+    input: Option<PathBuf>,
 
     /// Output transparent PNG file path
-    #[arg(short, long)]
-    output: PathBuf,
+    #[arg(short, long, required_unless_present = "version")]
+    output: Option<PathBuf>,
 
     /// Model to use for background removal (models are downloaded to ~/.rusticker/models/)
     #[arg(long, value_enum, default_value = "birefnet")]
@@ -38,16 +38,34 @@ struct Cli {
     /// Do not output any logs to stdout
     #[arg(short = 'q', long = "quiet", default_value_t = false)]
     quiet: bool,
+
+    /// Print version information
+    #[arg(short = 'V', long = "version", action = clap::ArgAction::SetTrue)]
+    version: bool,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
     
+    if cli.version {
+        println!("stickerize {}", env!("CARGO_PKG_VERSION"));
+        println!("Background removal tool build with Rust by drkbugs");
+        println!();
+        println!("Supported Models:");
+        println!("  - birefnet: https://github.com/danielgatis/rembg/releases/download/v0.0.0/BiRefNet-general-bb_swin_v1_tiny-epoch_232.onnx");
+        println!("  - u2netp:   https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2netp.onnx");
+        println!("  - rmbg:     https://huggingface.co/briaai/RMBG-1.4/resolve/main/onnx/model.onnx");
+        return Ok(());
+    }
+
+    let input = cli.input.ok_or("Missing input path")?;
+    let output = cli.output.ok_or("Missing output path")?;
+
     if cli.verbose && !cli.quiet {
-        println!("[VERBOSE] Starting background removal on {:?}", cli.input);
+        println!("[VERBOSE] Starting background removal on {:?}", input);
     }
     
-    remove_background(cli.input, cli.output, cli.model, cli.force, cli.verbose, cli.cuda, cli.quiet)?;
+    remove_background(input, output, cli.model, cli.force, cli.verbose, cli.cuda, cli.quiet)?;
     
     if cli.verbose && !cli.quiet {
         println!("[VERBOSE] Background removal finished successfully.");
