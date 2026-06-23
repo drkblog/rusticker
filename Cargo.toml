@@ -5,4 +5,5 @@ members = [
     "mask_generator",
     "background_remover",
     "pdf_generator",
+    "stickerize",
 ]

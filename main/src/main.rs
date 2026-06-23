@@ -1,5 +1,4 @@
 use clap::{Parser, Subcommand};
-use background_remover::{remove_background, ModelType};
 use pdf_generator::{bake_grid, compose_grid, FigureType, BatchComposeLineArgs, BatchComposeLineParser, BatchStickerInput, PageSize};
 use std::path::{Path, PathBuf};
 
@@ -108,21 +107,6 @@ enum Commands {
         /// Output file path for the PDF
         #[arg(short, long, default_value = "batch_composed.pdf")]
         output: PathBuf,
-    },
-    /// Erase the background of an image and save it as a transparent PNG.
-    /// Pre-trained models are automatically downloaded to ~/.rusticker/models/
-    Stickerize {
-        /// Path to the input image file (PNG, JPEG, or WEBP)
-        #[arg(long)]
-        input: PathBuf,
-
-        /// Output transparent PNG file path
-        #[arg(short, long)]
-        output: PathBuf,
-
-        /// Model to use for background removal (models are downloaded to ~/.rusticker/models/)
-        #[arg(long, value_enum, default_value = "u2netp")]
-        model: ModelType,
     },
 }
 
@@ -268,13 +252,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 println!("[VERBOSE] CSV validated successfully. Starting batch PDF composition...");
             }
             pdf_generator::batch_compose_grid(stickers, dpi, margin, output, verbose, page_size, is_unsafe)?;
-        }
-        Commands::Stickerize {
-            input,
-            output,
-            model,
-        } => {
-            remove_background(input, output, model, force, verbose)?;
         }
     }
 
