@@ -9,8 +9,8 @@ Commands:
   - stickerize
 Installers:
   - Architecture: x64
-    InstallerUrl: https://github.com/drkbugs/rusticker/releases/download/v1.1.5/rusticker-v1.1.5-windows-x64.zip
-    InstallerSha256: <SHA256_HASH_HERE>
+    InstallerUrl: https://github.com/drkblog/rusticker/releases/download/v1.1.5/rusticker-v1.1.5-windows-x64.zip
+    InstallerSha256: d73838a2015a798da8fcabf10fd11a132dec57381a25a1316ac21130981e1583
     NestedInstallerFiles:
       - RelativeFilePath: rusticker.exe
         PortableCommandAlias: rusticker
