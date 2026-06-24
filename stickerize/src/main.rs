@@ -42,6 +42,14 @@ struct Cli {
     /// Print version information
     #[arg(short = 'V', long = "version", action = clap::ArgAction::SetTrue)]
     version: bool,
+
+    /// Border thickness to add around the image in pixels (if present)
+    #[arg(long)]
+    border: Option<u32>,
+
+    /// Border color in hexadecimal format (e.g. '#22AA5E' or '22AA5E', case insensitive)
+    #[arg(long, default_value = "#FFFFFF")]
+    border_color: String,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -65,7 +73,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("[VERBOSE] Starting background removal on {:?}", input);
     }
     
-    remove_background(input, output, cli.model, cli.force, cli.verbose, cli.cuda, cli.quiet)?;
+    remove_background(
+        input,
+        output,
+        cli.model,
+        cli.force,
+        cli.verbose,
+        cli.cuda,
+        cli.quiet,
+        cli.border,
+        Some(cli.border_color),
+    )?;
     
     if cli.verbose && !cli.quiet {
         println!("[VERBOSE] Background removal finished successfully.");

@@ -292,6 +292,162 @@ fn load_and_optimize_model(
     Ok(model)
 }
 
+pub fn parse_hex_color(hex: &str) -> Result<Rgba<u8>, String> {
+    let hex = hex.trim();
+    let hex = if hex.starts_with('#') { &hex[1..] } else { hex };
+
+    match hex.len() {
+        3 => {
+            let r = u8::from_str_radix(&hex[0..1], 16)
+                .map_err(|_| format!("Invalid hex digit: '{}'", &hex[0..1]))?;
+            let g = u8::from_str_radix(&hex[1..2], 16)
+                .map_err(|_| format!("Invalid hex digit: '{}'", &hex[1..2]))?;
+            let b = u8::from_str_radix(&hex[2..3], 16)
+                .map_err(|_| format!("Invalid hex digit: '{}'", &hex[2..3]))?;
+            Ok(Rgba([r * 17, g * 17, b * 17, 255]))
+        }
+        6 => {
+            let r = u8::from_str_radix(&hex[0..2], 16)
+                .map_err(|_| format!("Invalid hex byte: '{}'", &hex[0..2]))?;
+            let g = u8::from_str_radix(&hex[2..4], 16)
+                .map_err(|_| format!("Invalid hex byte: '{}'", &hex[2..4]))?;
+            let b = u8::from_str_radix(&hex[4..6], 16)
+                .map_err(|_| format!("Invalid hex byte: '{}'", &hex[4..6]))?;
+            Ok(Rgba([r, g, b, 255]))
+        }
+        _ => Err(format!(
+            "Invalid hex color length (expected 3 or 6 hex digits, got '{}')",
+            hex
+        )),
+    }
+}
+
+pub fn add_border(
+    img: &RgbaImage,
+    thickness: u32,
+    color: Rgba<u8>,
+) -> RgbaImage {
+    let (width, height) = img.dimensions();
+    let border_img = img.clone();
+
+    if thickness == 0 {
+        return border_img;
+    }
+
+    // We consider a pixel to be part of the "subject" if its alpha is >= 10.
+    let alpha_threshold = 10u8;
+
+    // Find the bounding box of the subject pixels to optimize the search space.
+    let mut min_x = width;
+    let mut max_x = 0;
+    let mut min_y = height;
+    let mut max_y = 0;
+    let mut has_subject = false;
+
+    for y in 0..height {
+        for x in 0..width {
+            let pixel = img.get_pixel(x, y);
+            if pixel[3] >= alpha_threshold {
+                if x < min_x { min_x = x; }
+                if x > max_x { max_x = x; }
+                if y < min_y { min_y = y; }
+                if y > max_y { max_y = y; }
+                has_subject = true;
+            }
+        }
+    }
+
+    if !has_subject {
+        return border_img;
+    }
+
+    // Expand the bounding box by the thickness of the border.
+    let start_x = if min_x > thickness { min_x - thickness } else { 0 };
+    let end_x = if max_x + thickness < width { max_x + thickness } else { width - 1 };
+    let start_y = if min_y > thickness { min_y - thickness } else { 0 };
+    let end_y = if max_y + thickness < height { max_y + thickness } else { height - 1 };
+
+    // Compute the Euclidean distance threshold squared.
+    let r2 = (thickness * thickness) as i32;
+
+    // Create a new image to store the final result.
+    let mut result_img = RgbaImage::new(width, height);
+
+    // For each pixel in the expanded bounding box, check if it lies within `thickness` distance of any subject pixel.
+    for y in start_y..=end_y {
+        for x in start_x..=end_x {
+            let original_pixel = img.get_pixel(x, y);
+
+            // If the pixel is already fully opaque subject, we don't need to check neighbors.
+            if original_pixel[3] >= 255 {
+                result_img.put_pixel(x, y, *original_pixel);
+                continue;
+            }
+
+            // Search the neighborhood for a subject pixel.
+            let mut is_border = false;
+            let thickness_i = thickness as i32;
+
+            if original_pixel[3] >= alpha_threshold {
+                is_border = true;
+            } else {
+                'search: for dy in -thickness_i..=thickness_i {
+                    let ny = y as i32 + dy;
+                    if ny < 0 || ny >= height as i32 {
+                        continue;
+                    }
+
+                    let dy2 = dy * dy;
+                    if dy2 > r2 {
+                        continue;
+                    }
+
+                    for dx in -thickness_i..=thickness_i {
+                        let nx = x as i32 + dx;
+                        if nx < 0 || nx >= width as i32 {
+                            continue;
+                        }
+
+                        let dx2 = dx * dx;
+                        if dx2 + dy2 <= r2 {
+                            let neighbor_pixel = img.get_pixel(nx as u32, ny as u32);
+                            if neighbor_pixel[3] >= alpha_threshold {
+                                is_border = true;
+                                break 'search;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if is_border {
+                // If it's a border pixel, blend the original pixel over the border color.
+                let alpha_s = original_pixel[3] as f32 / 255.0;
+                let r = (alpha_s * original_pixel[0] as f32 + (1.0 - alpha_s) * color[0] as f32) as u8;
+                let g = (alpha_s * original_pixel[1] as f32 + (1.0 - alpha_s) * color[1] as f32) as u8;
+                let b = (alpha_s * original_pixel[2] as f32 + (1.0 - alpha_s) * color[2] as f32) as u8;
+                let a = (alpha_s * original_pixel[3] as f32 + (1.0 - alpha_s) * 255.0) as u8;
+
+                result_img.put_pixel(x, y, Rgba([r, g, b, a]));
+            } else {
+                // Not in the border, keep original transparent / empty pixel.
+                result_img.put_pixel(x, y, *original_pixel);
+            }
+        }
+    }
+
+    // Copy any pixels outside the bounding box that weren't processed (they are transparent).
+    for y in 0..height {
+        for x in 0..width {
+            if x < start_x || x > end_x || y < start_y || y > end_y {
+                result_img.put_pixel(x, y, *img.get_pixel(x, y));
+            }
+        }
+    }
+
+    result_img
+}
+
 pub fn remove_background(
     input_path: PathBuf,
     output_path: PathBuf,
@@ -300,6 +456,8 @@ pub fn remove_background(
     verbose: bool,
     use_cuda: bool,
     quiet: bool,
+    border: Option<u32>,
+    border_color: Option<String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     if output_path.exists() && !force {
         return Err(format!(
@@ -432,7 +590,7 @@ pub fn remove_background(
         if verbose {
             println!("[VERBOSE] Step: Applying transparency mask to original image...");
         } else {
-            println!("Step 6/6: Applying transparency mask and saving to {:?}...", output_path);
+            println!("Step 6/6: Applying transparency mask...");
         }
     }
     let mut out_img = RgbaImage::new(w_orig, h_orig);
@@ -454,10 +612,30 @@ pub fn remove_background(
         }
     }
 
+    // 7. Apply border if present
+    let final_img = if let Some(thickness) = border {
+        if thickness > 0 {
+            if !quiet {
+                if verbose {
+                    println!("[VERBOSE] Step: Adding border of thickness {} px...", thickness);
+                } else {
+                    println!("Adding border of thickness {} px...", thickness);
+                }
+            }
+            let color_str = border_color.as_deref().unwrap_or("#FFFFFF");
+            let color = parse_hex_color(color_str)?;
+            add_border(&out_img, thickness, color)
+        } else {
+            out_img
+        }
+    } else {
+        out_img
+    };
+
     if verbose && !quiet {
         println!("[VERBOSE] Saving output transparent PNG to {:?}", output_path);
     }
-    out_img.save(&output_path)?;
+    final_img.save(&output_path)?;
     if !quiet {
         println!("Saved background-removed image to {:?}", output_path);
     }
@@ -467,6 +645,8 @@ pub fn remove_background(
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     #[test]
     fn test_runtime_resolution() {
         // CPU runtime should always be available
@@ -479,4 +659,47 @@ mod tests {
         let cuda_runtime = tract_onnx::prelude::runtime_for_name("cuda");
         assert!(cuda_runtime.is_ok());
     }
+
+    #[test]
+    fn test_parse_hex_color() {
+        // Standard 6 digits with and without #
+        assert_eq!(parse_hex_color("#FFFFFF").unwrap(), Rgba([255, 255, 255, 255]));
+        assert_eq!(parse_hex_color("ffffff").unwrap(), Rgba([255, 255, 255, 255]));
+        assert_eq!(parse_hex_color("#22AA5E").unwrap(), Rgba([0x22, 0xAA, 0x5E, 255]));
+        assert_eq!(parse_hex_color("22aa5e").unwrap(), Rgba([0x22, 0xAA, 0x5E, 255]));
+
+        // Shorthand 3 digits with and without #
+        assert_eq!(parse_hex_color("#FFF").unwrap(), Rgba([255, 255, 255, 255]));
+        assert_eq!(parse_hex_color("000").unwrap(), Rgba([0, 0, 0, 255]));
+        assert_eq!(parse_hex_color("#123").unwrap(), Rgba([17, 34, 51, 255]));
+
+        // Invalid inputs
+        assert!(parse_hex_color("white").is_err());
+        assert!(parse_hex_color("#FFFFF").is_err());
+        assert!(parse_hex_color("#22AA5G").is_err()); // 'G' is invalid hex
+    }
+
+    #[test]
+    fn test_add_border() {
+        // Create a 5x5 transparent image with one opaque pixel in the center (2, 2)
+        let mut img = RgbaImage::new(5, 5);
+        img.put_pixel(2, 2, Rgba([255, 0, 0, 255]));
+
+        // Add 1px white border
+        let bordered = add_border(&img, 1, Rgba([255, 255, 255, 255]));
+
+        // Center pixel should remain unchanged
+        assert_eq!(bordered.get_pixel(2, 2), &Rgba([255, 0, 0, 255]));
+
+        // Adjacent pixels (2+1, 2) should be white border
+        assert_eq!(bordered.get_pixel(3, 2), &Rgba([255, 255, 255, 255]));
+        assert_eq!(bordered.get_pixel(1, 2), &Rgba([255, 255, 255, 255]));
+        assert_eq!(bordered.get_pixel(2, 3), &Rgba([255, 255, 255, 255]));
+        assert_eq!(bordered.get_pixel(2, 1), &Rgba([255, 255, 255, 255]));
+
+        // Corners (3, 3) are at distance sqrt(2) = 1.414.
+        // Since thickness is 1, a circle of radius 1 does not cover the corners.
+        assert_eq!(bordered.get_pixel(3, 3), &Rgba([0, 0, 0, 0]));
+    }
 }
+
