@@ -50,6 +50,10 @@ struct Cli {
     /// Border color in hexadecimal format (e.g. '#22AA5E' or '22AA5E', case insensitive)
     #[arg(long, default_value = "#FFFFFF")]
     border_color: String,
+
+    /// Enable antialiasing for the outer part of the border outline (true/false)
+    #[arg(long, default_value = "true", action = clap::ArgAction::Set)]
+    antialiasing: bool,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -83,6 +87,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         cli.quiet,
         cli.border,
         Some(cli.border_color),
+        cli.antialiasing,
     )?;
     
     if cli.verbose && !cli.quiet {

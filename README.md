@@ -30,10 +30,10 @@ The compiled binaries will be located at:
 For convenience, cross-platform packaging scripts are provided to build and bundle the executables:
 
 - **macOS**:
-  - Run [packager/macos/package.sh](file:///Users/drkbugs/repos/rusticker/packager/macos/package.sh) to compile and generate a universal macOS installer package: `packager/macos/target/rusticker-1.1.5.pkg`.
+  - Run [packager/macos/package.sh](file:///Users/drkbugs/repos/rusticker/packager/macos/package.sh) to compile and generate a universal macOS installer package: `packager/macos/target/rusticker-1.1.6.pkg`.
   - Use the `--native` flag to compile only for your host's native architecture (Apple Silicon or Intel) instead of a universal binary.
 - **Windows**:
-  - Run the Zsh script [packager/windows/package.sh](file:///Users/drkbugs/repos/rusticker/packager/windows/package.sh) on Unix-like hosts to cross-compile the MSVC target using `cargo-xwin` and generate the ZIP archive: `packager/windows/target/rusticker-v1.1.5-windows-x64.zip`.
+  - Run the Zsh script [packager/windows/package.sh](file:///Users/drkbugs/repos/rusticker/packager/windows/package.sh) on Unix-like hosts to cross-compile the MSVC target using `cargo-xwin` and generate the ZIP archive: `packager/windows/target/rusticker-v1.1.6-windows-x64.zip`.
   - Run the PowerShell script [packager/windows/package.ps1](file:///Users/drkbugs/repos/rusticker/packager/windows/package.ps1) to compile and package directly on a Windows host.
 
 ## Installation via WinGet
@@ -50,10 +50,10 @@ If you are developing or want to test the manifests locally before submitting to
 
 ```bash
 # Validate the manifest files structure and contents
-winget validate packager/windows/winget/1.1.5
+winget validate packager/windows/winget/1.1.6
 
 # Test the installation locally using the manifests
-winget install --manifest packager/windows/winget/1.1.5
+winget install --manifest packager/windows/winget/1.1.6
 ```
 
 ## Usage
@@ -179,6 +179,7 @@ stickerize [OPTIONS] --input <INPUT> --output <OUTPUT>
 - `-V, --version`: Prints version information, the background removal tool build legend (`Background removal tool build with Rust by drkbugs`), and supported models along with their download URLs.
 - `--border <BORDER>`: (Optional) Border thickness in pixels to add around the foreground object after background removal.
 - `--border-color <BORDER_COLOR>`: Border color in hexadecimal format (e.g. `#22AA5E` or `22AA5E`, case-insensitive) [default: `#FFFFFF`].
+- `--antialiasing <true|false>`: Enable or disable antialiasing for the outer part of the border outline [default: `true`].
 
 
 ### Mask Generation Algorithms
@@ -267,4 +268,14 @@ cargo run --bin stickerize -- --model birefnet --input my_sticker.jpg -o my_stic
 ### Erase the background and add a customized border
 ```bash
 cargo run --bin stickerize -- --input my_sticker.jpg -o my_sticker_transparent.png --border 10 --border-color "#22AA5E"
+```
+
+### Erase the background and add an antialiased border (enabled by default)
+```bash
+cargo run --bin stickerize -- --input my_sticker.jpg -o my_sticker_transparent.png --border 10 --border-color "#22AA5E"
+```
+
+### Erase the background and add a non-antialiased (sharp) border
+```bash
+cargo run --bin stickerize -- --input my_sticker.jpg -o my_sticker_transparent.png --border 10 --border-color "#22AA5E" --antialiasing false
 ```

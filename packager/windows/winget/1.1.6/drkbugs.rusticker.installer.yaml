@@ -1,0 +1,20 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.12.0.schema.json
+PackageIdentifier: drkbugs.rusticker
+PackageVersion: 1.1.6
+MinimumOSVersion: 10.0.0.0
+InstallerType: zip
+NestedInstallerType: portable
+Commands:
+  - rusticker
+  - stickerize
+Installers:
+  - Architecture: x64
+    InstallerUrl: https://github.com/drkblog/rusticker/releases/download/v1.1.6/rusticker-v1.1.6-windows-x64.zip
+    InstallerSha256: e939b3f95dc310eb6b7edaa5968f3535b93ad4a3400b546db78450c24fc8eccc
+    NestedInstallerFiles:
+      - RelativeFilePath: rusticker.exe
+        PortableCommandAlias: rusticker
+      - RelativeFilePath: stickerize.exe
+        PortableCommandAlias: stickerize
+ManifestType: installer
+ManifestVersion: 1.12.0

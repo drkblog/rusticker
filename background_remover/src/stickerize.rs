@@ -326,6 +326,7 @@ pub fn add_border(
     img: &RgbaImage,
     thickness: u32,
     color: Rgba<u8>,
+    antialiasing: bool,
 ) -> RgbaImage {
     let (width, height) = img.dimensions();
     let border_img = img.clone();
@@ -362,13 +363,12 @@ pub fn add_border(
     }
 
     // Expand the bounding box by the thickness of the border.
-    let start_x = if min_x > thickness { min_x - thickness } else { 0 };
-    let end_x = if max_x + thickness < width { max_x + thickness } else { width - 1 };
-    let start_y = if min_y > thickness { min_y - thickness } else { 0 };
-    let end_y = if max_y + thickness < height { max_y + thickness } else { height - 1 };
-
-    // Compute the Euclidean distance threshold squared.
-    let r2 = (thickness * thickness) as i32;
+    // If antialiasing is active, expand by thickness + 1 to account for fractional pixel coverage.
+    let expansion = if antialiasing { thickness + 1 } else { thickness };
+    let start_x = if min_x > expansion { min_x - expansion } else { 0 };
+    let end_x = if max_x + expansion < width { max_x + expansion } else { width - 1 };
+    let start_y = if min_y > expansion { min_y - expansion } else { 0 };
+    let end_y = if max_y + expansion < height { max_y + expansion } else { height - 1 };
 
     // Create a new image to store the final result.
     let mut result_img = RgbaImage::new(width, height);
@@ -384,14 +384,17 @@ pub fn add_border(
                 continue;
             }
 
-            // Search the neighborhood for a subject pixel.
-            let mut is_border = false;
+            // Search the neighborhood for the minimum distance to a subject pixel.
+            let mut min_d = f64::INFINITY;
             let thickness_i = thickness as i32;
 
             if original_pixel[3] >= alpha_threshold {
-                is_border = true;
+                min_d = 0.0;
             } else {
-                'search: for dy in -thickness_i..=thickness_i {
+                let limit = if antialiasing { thickness_i + 1 } else { thickness_i };
+                let r2 = (limit * limit) as i32;
+
+                for dy in -limit..=limit {
                     let ny = y as i32 + dy;
                     if ny < 0 || ny >= height as i32 {
                         continue;
@@ -402,33 +405,63 @@ pub fn add_border(
                         continue;
                     }
 
-                    for dx in -thickness_i..=thickness_i {
+                    for dx in -limit..=limit {
                         let nx = x as i32 + dx;
                         if nx < 0 || nx >= width as i32 {
                             continue;
                         }
 
                         let dx2 = dx * dx;
-                        if dx2 + dy2 <= r2 {
+                        let dist2 = dx2 + dy2;
+                        if dist2 <= r2 {
                             let neighbor_pixel = img.get_pixel(nx as u32, ny as u32);
                             if neighbor_pixel[3] >= alpha_threshold {
-                                is_border = true;
-                                break 'search;
+                                let d = (dist2 as f64).sqrt();
+                                if d < min_d {
+                                    min_d = d;
+                                }
                             }
                         }
                     }
                 }
             }
 
-            if is_border {
-                // If it's a border pixel, blend the original pixel over the border color.
-                let alpha_s = original_pixel[3] as f32 / 255.0;
-                let r = (alpha_s * original_pixel[0] as f32 + (1.0 - alpha_s) * color[0] as f32) as u8;
-                let g = (alpha_s * original_pixel[1] as f32 + (1.0 - alpha_s) * color[1] as f32) as u8;
-                let b = (alpha_s * original_pixel[2] as f32 + (1.0 - alpha_s) * color[2] as f32) as u8;
-                let a = (alpha_s * original_pixel[3] as f32 + (1.0 - alpha_s) * 255.0) as u8;
+            let mut weight = 0.0;
+            if min_d != f64::INFINITY {
+                if antialiasing {
+                    let t = thickness as f64;
+                    if min_d <= t - 0.5 {
+                        weight = 1.0;
+                    } else if min_d < t + 0.5 {
+                        weight = t + 0.5 - min_d;
+                    } else {
+                        weight = 0.0;
+                    }
+                } else {
+                    if min_d <= thickness as f64 {
+                        weight = 1.0;
+                    } else {
+                        weight = 0.0;
+                    }
+                }
+            }
 
-                result_img.put_pixel(x, y, Rgba([r, g, b, a]));
+            if weight > 0.0 {
+                // Blend the original pixel over the border color, scaled by border opacity weight.
+                let alpha_s = original_pixel[3] as f32 / 255.0;
+                let alpha_border = weight as f32;
+                let alpha_final = alpha_s + (1.0 - alpha_s) * alpha_border;
+
+                if alpha_final > 0.0 {
+                    let r = ((alpha_s * original_pixel[0] as f32 + (1.0 - alpha_s) * alpha_border * color[0] as f32) / alpha_final) as u8;
+                    let g = ((alpha_s * original_pixel[1] as f32 + (1.0 - alpha_s) * alpha_border * color[1] as f32) / alpha_final) as u8;
+                    let b = ((alpha_s * original_pixel[2] as f32 + (1.0 - alpha_s) * alpha_border * color[2] as f32) / alpha_final) as u8;
+                    let a = (alpha_final * 255.0) as u8;
+
+                    result_img.put_pixel(x, y, Rgba([r, g, b, a]));
+                } else {
+                    result_img.put_pixel(x, y, Rgba([0, 0, 0, 0]));
+                }
             } else {
                 // Not in the border, keep original transparent / empty pixel.
                 result_img.put_pixel(x, y, *original_pixel);
@@ -458,6 +491,7 @@ pub fn remove_background(
     quiet: bool,
     border: Option<u32>,
     border_color: Option<String>,
+    antialiasing: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     if output_path.exists() && !force {
         return Err(format!(
@@ -624,7 +658,7 @@ pub fn remove_background(
             }
             let color_str = border_color.as_deref().unwrap_or("#FFFFFF");
             let color = parse_hex_color(color_str)?;
-            add_border(&out_img, thickness, color)
+            add_border(&out_img, thickness, color, antialiasing)
         } else {
             out_img
         }
@@ -686,7 +720,7 @@ mod tests {
         img.put_pixel(2, 2, Rgba([255, 0, 0, 255]));
 
         // Add 1px white border
-        let bordered = add_border(&img, 1, Rgba([255, 255, 255, 255]));
+        let bordered = add_border(&img, 1, Rgba([255, 255, 255, 255]), false);
 
         // Center pixel should remain unchanged
         assert_eq!(bordered.get_pixel(2, 2), &Rgba([255, 0, 0, 255]));
@@ -700,6 +734,31 @@ mod tests {
         // Corners (3, 3) are at distance sqrt(2) = 1.414.
         // Since thickness is 1, a circle of radius 1 does not cover the corners.
         assert_eq!(bordered.get_pixel(3, 3), &Rgba([0, 0, 0, 0]));
+    }
+
+    #[test]
+    fn test_add_border_antialiasing() {
+        // Create a 5x5 transparent image with one opaque pixel in the center (2, 2)
+        let mut img = RgbaImage::new(5, 5);
+        img.put_pixel(2, 2, Rgba([255, 0, 0, 255]));
+
+        // Add 1px white border with antialiasing enabled
+        let bordered = add_border(&img, 1, Rgba([255, 255, 255, 255]), true);
+
+        // Center pixel should remain unchanged
+        assert_eq!(bordered.get_pixel(2, 2), &Rgba([255, 0, 0, 255]));
+
+        // Adjacent pixels at distance 1.0: weight = 1.5 - 1.0 = 0.5.
+        // Alpha = 0.5 * 255 = 127.
+        assert_eq!(bordered.get_pixel(3, 2)[3], 127);
+        assert_eq!(bordered.get_pixel(1, 2)[3], 127);
+        assert_eq!(bordered.get_pixel(2, 3)[3], 127);
+        assert_eq!(bordered.get_pixel(2, 1)[3], 127);
+
+        // Diagonal pixels (3, 3) are at distance sqrt(2) = 1.4142.
+        // weight = 1.5 - 1.4142 = 0.0858.
+        // Alpha = 0.0858 * 255 = 21.
+        assert_eq!(bordered.get_pixel(3, 3)[3], 21);
     }
 }
 
