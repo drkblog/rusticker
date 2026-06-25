@@ -25,6 +25,37 @@ The compiled binaries will be located at:
 - `target/release/rusticker`: Main tool containing the layout commands (`bake`, `compose`, `batch-compose`).
 - `target/release/stickerize`: Background removal neural network tool.
 
+### Packaging Scripts
+
+For convenience, cross-platform packaging scripts are provided to build and bundle the executables:
+
+- **macOS**:
+  - Run [packager/macos/package.sh](file:///Users/drkbugs/repos/rusticker/packager/macos/package.sh) to compile and generate a universal macOS installer package: `packager/macos/target/rusticker-1.1.5.pkg`.
+  - Use the `--native` flag to compile only for your host's native architecture (Apple Silicon or Intel) instead of a universal binary.
+- **Windows**:
+  - Run the Zsh script [packager/windows/package.sh](file:///Users/drkbugs/repos/rusticker/packager/windows/package.sh) on Unix-like hosts to cross-compile the MSVC target using `cargo-xwin` and generate the ZIP archive: `packager/windows/target/rusticker-v1.1.5-windows-x64.zip`.
+  - Run the PowerShell script [packager/windows/package.ps1](file:///Users/drkbugs/repos/rusticker/packager/windows/package.ps1) to compile and package directly on a Windows host.
+
+## Installation via WinGet
+
+Windows users can install `rusticker` and `stickerize` using the [WinGet](https://github.com/microsoft/winget-cli) package manager:
+
+```bash
+winget install drkbugs.rusticker
+```
+
+### Local Manifest Verification & Testing
+
+If you are developing or want to test the manifests locally before submitting to the WinGet community repository, run:
+
+```bash
+# Validate the manifest files structure and contents
+winget validate packager/windows/winget/1.1.5
+
+# Test the installation locally using the manifests
+winget install --manifest packager/windows/winget/1.1.5
+```
+
 ## Usage
 
 The project is split into two standalone executables.
@@ -145,6 +176,9 @@ stickerize [OPTIONS] --input <INPUT> --output <OUTPUT>
   - `rmbg`: Bria AI's high-quality background removal model (~176 MB). If not locally cached, it downloads automatically from Hugging Face to `~/.rusticker/models/rmbg.onnx`.
 - `--cuda`: Use CUDA GPU acceleration for inference if specified (CPU execution is used by default).
 - `-q, --quiet`: Do not output any logs or progress indicators to stdout (errors will still be printed).
+- `-V, --version`: Prints version information, the background removal tool build legend (`Background removal tool build with Rust by drkbugs`), and supported models along with their download URLs.
+- `--border <BORDER>`: (Optional) Border thickness in pixels to add around the foreground object after background removal.
+- `--border-color <BORDER_COLOR>`: Border color in hexadecimal format (e.g. `#22AA5E` or `22AA5E`, case-insensitive) [default: `#FFFFFF`].
 
 
 ### Mask Generation Algorithms
@@ -228,4 +262,9 @@ cargo run --bin stickerize -- --model rmbg --input my_sticker.jpg -o my_sticker_
 ### Erase the background using the BiRefNet model
 ```bash
 cargo run --bin stickerize -- --model birefnet --input my_sticker.jpg -o my_sticker_transparent.png
+```
+
+### Erase the background and add a customized border
+```bash
+cargo run --bin stickerize -- --input my_sticker.jpg -o my_sticker_transparent.png --border 10 --border-color "#22AA5E"
 ```
