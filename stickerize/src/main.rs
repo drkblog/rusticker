@@ -1,5 +1,5 @@
 use clap::Parser;
-use background_remover::{remove_background, ModelType};
+use background_remover::{remove_background, ModelType, OutputFormat};
 use std::path::PathBuf;
 
 /// Stickerize CLI application - Background removal tool for rusticker
@@ -54,6 +54,10 @@ struct Cli {
     /// Enable antialiasing for the outer part of the border outline (true/false)
     #[arg(long, default_value = "true", action = clap::ArgAction::Set)]
     antialiasing: bool,
+
+    /// Output image format
+    #[arg(long, value_enum, default_value = "png")]
+    format: OutputFormat,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -88,6 +92,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         cli.border,
         Some(cli.border_color),
         cli.antialiasing,
+        cli.format,
     )?;
     
     if cli.verbose && !cli.quiet {

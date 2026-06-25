@@ -9,3 +9,9 @@ pub enum ModelType {
     Rmbg,
     Birefnet,
 }
+
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum OutputFormat {
+    Png,
+    Webp,
+}

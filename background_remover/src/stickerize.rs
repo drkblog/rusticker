@@ -8,7 +8,7 @@ use tract_core::ops::konst::Const;
 use tract_core::ops::array::GatherNd;
 use tract_core::internal::*;
 use tract_hir::infer::{InferenceOp, InferenceNode, ShapeFactoid, Factoid};
-use crate::ModelType;
+use crate::{ModelType, OutputFormat};
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct MyGatherNd {
@@ -492,6 +492,7 @@ pub fn remove_background(
     border: Option<u32>,
     border_color: Option<String>,
     antialiasing: bool,
+    format: OutputFormat,
 ) -> Result<(), Box<dyn std::error::Error>> {
     if output_path.exists() && !force {
         return Err(format!(
@@ -666,10 +667,20 @@ pub fn remove_background(
         out_img
     };
 
+    let format_desc = match format {
+        OutputFormat::Png => "PNG",
+        OutputFormat::Webp => "WebP",
+    };
     if verbose && !quiet {
-        println!("[VERBOSE] Saving output transparent PNG to {:?}", output_path);
+        println!("[VERBOSE] Saving output transparent {} to {:?}", format_desc, output_path);
     }
-    final_img.save(&output_path)?;
+    
+    let img_format = match format {
+        OutputFormat::Png => image::ImageFormat::Png,
+        OutputFormat::Webp => image::ImageFormat::WebP,
+    };
+    final_img.save_with_format(&output_path, img_format)?;
+    
     if !quiet {
         println!("Saved background-removed image to {:?}", output_path);
     }
