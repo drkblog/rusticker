@@ -670,16 +670,53 @@ pub fn remove_background(
     let format_desc = match format {
         OutputFormat::Png => "PNG",
         OutputFormat::Webp => "WebP",
+        OutputFormat::WsWebp => "WebP (512x512)",
     };
     if verbose && !quiet {
         println!("[VERBOSE] Saving output transparent {} to {:?}", format_desc, output_path);
     }
     
+    let processed_img = match format {
+        OutputFormat::WsWebp => {
+            let (w, h) = final_img.dimensions();
+            let (new_w, new_h) = if w >= h {
+                let nw = 512;
+                let nh = ((h as f64 * 512.0) / w as f64).round() as u32;
+                (nw, std::cmp::max(1, nh))
+            } else {
+                let nh = 512;
+                let nw = ((w as f64 * 512.0) / h as f64).round() as u32;
+                (nw, std::cmp::max(1, nh))
+            };
+            
+            if verbose && !quiet {
+                println!("[VERBOSE] Resizing image from {}x{} px to {}x{} px for ws-webp format", w, h, new_w, new_h);
+            }
+            
+            let resized_img = image::DynamicImage::ImageRgba8(final_img)
+                .resize_exact(new_w, new_h, image::imageops::FilterType::Lanczos3)
+                .to_rgba8();
+            
+            let mut square_img = RgbaImage::new(512, 512);
+            let x_offset = (512 - new_w) / 2;
+            let y_offset = (512 - new_h) / 2;
+            
+            for y in 0..new_h {
+                for x in 0..new_w {
+                    let pixel = resized_img.get_pixel(x, y);
+                    square_img.put_pixel(x + x_offset, y + y_offset, *pixel);
+                }
+            }
+            square_img
+        }
+        _ => final_img,
+    };
+    
     let img_format = match format {
         OutputFormat::Png => image::ImageFormat::Png,
-        OutputFormat::Webp => image::ImageFormat::WebP,
+        OutputFormat::Webp | OutputFormat::WsWebp => image::ImageFormat::WebP,
     };
-    final_img.save_with_format(&output_path, img_format)?;
+    processed_img.save_with_format(&output_path, img_format)?;
     
     if !quiet {
         println!("Saved background-removed image to {:?}", output_path);
@@ -770,6 +807,98 @@ mod tests {
         // weight = 1.5 - 1.4142 = 0.0858.
         // Alpha = 0.0858 * 255 = 21.
         assert_eq!(bordered.get_pixel(3, 3)[3], 21);
+    }
+
+    #[test]
+    fn test_ws_webp_formatting() {
+        use std::fs;
+        // 1. Create a 1000x500 image with red pixels (all opaque, no transparency).
+        let mut img = RgbaImage::new(1000, 500);
+        for y in 0..500 {
+            for x in 0..1000 {
+                img.put_pixel(x, y, Rgba([255, 0, 0, 255]));
+            }
+        }
+        
+        // 2. Perform the ws-webp formatting transformation manually or by invoking the code block.
+        let format = OutputFormat::WsWebp;
+        let final_img = img;
+        
+        let processed_img = match format {
+            OutputFormat::WsWebp => {
+                let (w, h) = final_img.dimensions();
+                let (new_w, new_h) = if w >= h {
+                    let nw = 512;
+                    let nh = ((h as f64 * 512.0) / w as f64).round() as u32;
+                    (nw, std::cmp::max(1, nh))
+                } else {
+                    let nh = 512;
+                    let nw = ((w as f64 * 512.0) / h as f64).round() as u32;
+                    (nw, std::cmp::max(1, nh))
+                };
+                
+                let resized_img = image::DynamicImage::ImageRgba8(final_img)
+                    .resize_exact(new_w, new_h, image::imageops::FilterType::Lanczos3)
+                    .to_rgba8();
+                
+                let mut square_img = RgbaImage::new(512, 512);
+                let x_offset = (512 - new_w) / 2;
+                let y_offset = (512 - new_h) / 2;
+                
+                for y in 0..new_h {
+                    for x in 0..new_w {
+                        let pixel = resized_img.get_pixel(x, y);
+                        square_img.put_pixel(x + x_offset, y + y_offset, *pixel);
+                    }
+                }
+                square_img
+            }
+            _ => final_img,
+        };
+        
+        // Check processed image dimensions
+        assert_eq!(processed_img.width(), 512);
+        assert_eq!(processed_img.height(), 512);
+        
+        // Check padding and resized content
+        // For 1000x500 -> 512x256, centered.
+        // y_offset = (512 - 256) / 2 = 128.
+        // Padding: y < 128 should be transparent
+        assert_eq!(processed_img.get_pixel(0, 0), &Rgba([0, 0, 0, 0]));
+        assert_eq!(processed_img.get_pixel(511, 127), &Rgba([0, 0, 0, 0]));
+        
+        // Content: y between 128 and 383 should be red and opaque
+        assert_eq!(processed_img.get_pixel(0, 128), &Rgba([255, 0, 0, 255]));
+        assert_eq!(processed_img.get_pixel(256, 256), &Rgba([255, 0, 0, 255]));
+        assert_eq!(processed_img.get_pixel(511, 383), &Rgba([255, 0, 0, 255]));
+        
+        // Padding: y >= 384 should be transparent
+        assert_eq!(processed_img.get_pixel(0, 384), &Rgba([0, 0, 0, 0]));
+        assert_eq!(processed_img.get_pixel(511, 511), &Rgba([0, 0, 0, 0]));
+        
+        // 3. Save to a temporary file as WebP and read back to ensure transparency is preserved
+        let temp_dir = std::env::temp_dir();
+        let temp_path = temp_dir.join("test_ws_webp.webp");
+        
+        processed_img.save_with_format(&temp_path, image::ImageFormat::WebP).unwrap();
+        
+        let loaded = image::ImageReader::open(&temp_path).unwrap()
+            .with_guessed_format().unwrap()
+            .decode().unwrap();
+            
+        assert_eq!(loaded.width(), 512);
+        assert_eq!(loaded.height(), 512);
+        
+        // Verify color type has alpha channel
+        assert_eq!(loaded.color(), image::ColorType::Rgba8);
+        
+        // Check a transparent pixel and a red pixel in loaded image
+        let loaded_rgba = loaded.to_rgba8();
+        assert_eq!(loaded_rgba.get_pixel(0, 0), &Rgba([0, 0, 0, 0]));
+        assert_eq!(loaded_rgba.get_pixel(256, 256), &Rgba([255, 0, 0, 255]));
+        
+        // Cleanup temp file
+        let _ = fs::remove_file(temp_path);
     }
 }
 

@@ -14,4 +14,7 @@ pub enum ModelType {
 pub enum OutputFormat {
     Png,
     Webp,
+    #[value(name = "ws-webp")]
+    WsWebp,
 }
+

@@ -180,7 +180,7 @@ stickerize [OPTIONS] --input <INPUT> --output <OUTPUT>
 - `--border <BORDER>`: (Optional) Border thickness in pixels to add around the foreground object after background removal.
 - `--border-color <BORDER_COLOR>`: Border color in hexadecimal format (e.g. `#22AA5E` or `22AA5E`, case-insensitive) [default: `#FFFFFF`].
 - `--antialiasing <true|false>`: Enable or disable antialiasing for the outer part of the border outline [default: `true`].
-- `--format <png|webp>`: Output image format to save background-removed stickers [default: `png`].
+- `--format <png|webp|ws-webp>`: Output image format to save background-removed stickers [default: `png`]. The `ws-webp` format resizes the image to fit into a transparent 512x512 pixels square, preserving the aspect ratio and padding the margins with transparency.
 
 
 ### Mask Generation Algorithms
@@ -285,3 +285,9 @@ cargo run --bin stickerize -- --input my_sticker.jpg -o my_sticker_transparent.p
 ```bash
 cargo run --bin stickerize -- --input my_sticker.jpg -o my_sticker_transparent.webp --format webp
 ```
+
+### Erase the background and save as a resized, transparent 512x512 WebP (ws-webp)
+```bash
+cargo run --bin stickerize -- --input my_sticker.jpg -o my_sticker_512.webp --format ws-webp
+```
+
