@@ -181,6 +181,9 @@ stickerize [OPTIONS] --input <INPUT> --output <OUTPUT>
 - `--border-color <BORDER_COLOR>`: Border color in hexadecimal format (e.g. `#22AA5E` or `22AA5E`, case-insensitive) [default: `#FFFFFF`].
 - `--antialiasing <true|false>`: Enable or disable antialiasing for the outer part of the border outline [default: `true`].
 - `--format <png|webp|ws-webp>`: Output image format to save background-removed stickers [default: `png`]. The `ws-webp` format resizes the image to fit into a transparent 512x512 pixels square, preserving the aspect ratio and padding the margins with transparency.
+- `--quality <QUALITY>`: Output image quality, accepting an integer between `1` (lowest quality/compression) and `100` (highest quality/compression) [default: `80`]. It configures the PNG DEFLATE compression level proportionally or specifies the WebP lossy encoding quality.
+
+
 
 
 ### Mask Generation Algorithms

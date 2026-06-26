@@ -58,6 +58,10 @@ struct Cli {
     /// Output image format
     #[arg(long, value_enum, default_value = "png")]
     format: OutputFormat,
+
+    /// Output image quality (1 to 100, 1 being lowest and 100 highest)
+    #[arg(long, default_value_t = 80, value_parser = clap::value_parser!(u32).range(1..=100))]
+    quality: u32,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -93,6 +97,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some(cli.border_color),
         cli.antialiasing,
         cli.format,
+        cli.quality,
     )?;
     
     if cli.verbose && !cli.quiet {

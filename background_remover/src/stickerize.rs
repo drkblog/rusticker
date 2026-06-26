@@ -493,6 +493,7 @@ pub fn remove_background(
     border_color: Option<String>,
     antialiasing: bool,
     format: OutputFormat,
+    quality: u32,
 ) -> Result<(), Box<dyn std::error::Error>> {
     if output_path.exists() && !force {
         return Err(format!(
@@ -716,7 +717,51 @@ pub fn remove_background(
         OutputFormat::Png => image::ImageFormat::Png,
         OutputFormat::Webp | OutputFormat::WsWebp => image::ImageFormat::WebP,
     };
-    processed_img.save_with_format(&output_path, img_format)?;
+    
+    if img_format == image::ImageFormat::Png {
+        use image::codecs::png::{PngEncoder, CompressionType, FilterType};
+        use std::io::BufWriter;
+        use image::ImageEncoder;
+        
+        let compression_level = if quality == 100 {
+            CompressionType::Best
+        } else if quality == 1 {
+            CompressionType::Uncompressed
+        } else {
+            let level = 1 + ((quality - 2) * 8) / 97;
+            CompressionType::Level(level as u8)
+        };
+        
+        if verbose && !quiet {
+            println!("[VERBOSE] Saving PNG with compression level {:?}", compression_level);
+        }
+        
+        let file = File::create(&output_path)?;
+        let writer = BufWriter::new(file);
+        let encoder = PngEncoder::new_with_quality(
+            writer,
+            compression_level,
+            FilterType::Adaptive,
+        );
+        encoder.write_image(
+            processed_img.as_raw(),
+            processed_img.width(),
+            processed_img.height(),
+            image::ExtendedColorType::Rgba8,
+        )?;
+    } else {
+        // Output format is WebP or WsWebp. Save with custom WebP quality (1..100) using webp crate
+        let dynamic_img = image::DynamicImage::ImageRgba8(processed_img);
+        let encoder = webp::Encoder::from_image(&dynamic_img)
+            .map_err(|e| format!("Failed to create WebP encoder: {}", e))?;
+        
+        if verbose && !quiet {
+            println!("[VERBOSE] Saving WebP with quality option {}", quality);
+        }
+        
+        let webp_memory = encoder.encode(quality as f32);
+        std::fs::write(&output_path, &*webp_memory)?;
+    }
     
     if !quiet {
         println!("Saved background-removed image to {:?}", output_path);
@@ -899,6 +944,103 @@ mod tests {
         
         // Cleanup temp file
         let _ = fs::remove_file(temp_path);
+    }
+
+    #[test]
+    fn test_png_quality_saving() {
+        use std::fs;
+        use std::io::BufWriter;
+        use image::ImageEncoder;
+        use image::codecs::png::{PngEncoder, CompressionType, FilterType};
+
+        // Create an image with some structural patterns so compression makes a difference
+        let mut img = RgbaImage::new(128, 128);
+        for y in 0..128 {
+            for x in 0..128 {
+                img.put_pixel(x, y, Rgba([x as u8, y as u8, (x + y) as u8, 255]));
+            }
+        }
+
+        let temp_dir = std::env::temp_dir();
+        let path_low = temp_dir.join("test_png_low.png");
+        let path_high = temp_dir.join("test_png_high.png");
+
+        // Save with low quality (1 -> Uncompressed)
+        {
+            let file = fs::File::create(&path_low).unwrap();
+            let writer = BufWriter::new(file);
+            let encoder = PngEncoder::new_with_quality(writer, CompressionType::Uncompressed, FilterType::Adaptive);
+            encoder.write_image(img.as_raw(), img.width(), img.height(), image::ExtendedColorType::Rgba8).unwrap();
+        }
+
+        // Save with high quality (100 -> Best compression)
+        {
+            let file = fs::File::create(&path_high).unwrap();
+            let writer = BufWriter::new(file);
+            let encoder = PngEncoder::new_with_quality(writer, CompressionType::Best, FilterType::Adaptive);
+            encoder.write_image(img.as_raw(), img.width(), img.height(), image::ExtendedColorType::Rgba8).unwrap();
+        }
+
+        let meta_low = fs::metadata(&path_low).unwrap();
+        let meta_high = fs::metadata(&path_high).unwrap();
+
+        // High quality (Best compression) should be significantly smaller than Low quality (Uncompressed)
+        assert!(meta_high.len() < meta_low.len(), "Best compressed size ({}) should be smaller than uncompressed size ({})", meta_high.len(), meta_low.len());
+
+        let _ = fs::remove_file(path_low);
+        let _ = fs::remove_file(path_high);
+    }
+
+    #[test]
+    fn test_webp_quality_saving() {
+        use std::fs;
+        // Create an image with some structural patterns so quality level changes size
+        let mut img = RgbaImage::new(128, 128);
+        for y in 0..128 {
+            for x in 0..128 {
+                img.put_pixel(x, y, Rgba([x as u8, y as u8, (x + y) as u8, 255]));
+            }
+        }
+
+        let temp_dir = std::env::temp_dir();
+        let path_low = temp_dir.join("test_webp_low.webp");
+        let path_high = temp_dir.join("test_webp_high.webp");
+
+        // Save with low quality (10)
+        {
+            let dynamic_img = image::DynamicImage::ImageRgba8(img.clone());
+            let encoder = webp::Encoder::from_image(&dynamic_img).unwrap();
+            let webp_memory = encoder.encode(10.0);
+            fs::write(&path_low, &*webp_memory).unwrap();
+        }
+
+        // Save with high quality (95)
+        {
+            let dynamic_img = image::DynamicImage::ImageRgba8(img);
+            let encoder = webp::Encoder::from_image(&dynamic_img).unwrap();
+            let webp_memory = encoder.encode(95.0);
+            fs::write(&path_high, &*webp_memory).unwrap();
+        }
+
+        let meta_low = fs::metadata(&path_low).unwrap();
+        let meta_high = fs::metadata(&path_high).unwrap();
+
+        // Low quality (10) should be smaller than high quality (95)
+        assert!(meta_low.len() < meta_high.len(), "Low quality size ({}) should be smaller than high quality size ({})", meta_low.len(), meta_high.len());
+
+        // Verify that we can load them back
+        let loaded_low = image::ImageReader::open(&path_low).unwrap()
+            .with_guessed_format().unwrap()
+            .decode().unwrap();
+        assert_eq!(loaded_low.width(), 128);
+        assert_eq!(loaded_low.height(), 128);
+        
+        // Convert to RGBA8 to verify it decodes and handles transparency channel formatting correctly
+        let loaded_rgba = loaded_low.to_rgba8();
+        assert_eq!(loaded_rgba.width(), 128);
+
+        let _ = fs::remove_file(path_low);
+        let _ = fs::remove_file(path_high);
     }
 }
 
