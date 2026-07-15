@@ -10,7 +10,7 @@ Commands:
 Installers:
   - Architecture: x64
     InstallerUrl: https://github.com/drkblog/rusticker/releases/download/v1.1.6/rusticker-v1.1.6-windows-x64.zip
-    InstallerSha256: e939b3f95dc310eb6b7edaa5968f3535b93ad4a3400b546db78450c24fc8eccc
+    InstallerSha256: 590db5e1516f716c025825b725b175e09d7250d64c4ac635d18db0c87ab41c81
     NestedInstallerFiles:
       - RelativeFilePath: rusticker.exe
         PortableCommandAlias: rusticker
